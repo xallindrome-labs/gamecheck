@@ -1,3 +1,4 @@
+import { seededRandom } from './random.js';
 import { openGame, type OpenOptions, type Session } from './session.js';
 
 export type Step =
@@ -5,7 +6,17 @@ export type Step =
   | { do: 'key'; key: string; ms?: number }
   | { do: 'eval'; expr: string; as?: string }
   | { do: 'waitFor'; expr: string; timeoutMs?: number; pollMs?: number }
-  | { do: 'snapshot'; as: string; expr: string };
+  | { do: 'snapshot'; as: string; expr: string }
+  /**
+   * Advances until the expression is true and records how long it took, in game time: { ms, capped, stalled }. The
+   * fight-length table: "until the boss is dead", capped, and stalled when the progress expression stops changing.
+   */
+  | { do: 'measure'; until: string; as: string; capMs?: number; pollMs?: number; progress?: string; stallMs?: number }
+  /**
+   * Plays on for ms of game time, checking an invariant every pollMs and, if given, pressing a seeded random key every
+   * everyMs. Records { ok, violatedAtMs, seed, presses }: a softlock or out-of-bounds hunt that replays from its seed.
+   */
+  | { do: 'soak'; ms: number; invariant: string; as: string; pollMs?: number; inputs?: { keys: string[]; seed?: number; everyMs?: number; holdMs?: number } };
 
 export interface Expectation {
   at: string;
@@ -37,7 +48,7 @@ export interface Observation {
   expected: Record<string, unknown>;
 }
 
-export interface Record_ {
+export interface ScenarioRecord {
   id: string;
   clock: 'stepped' | 'real';
   ok: boolean;
@@ -69,7 +80,51 @@ export function judge(expectation: Expectation, recorded: Record<string, unknown
   return { why: expectation.why, ok, actual, expected };
 }
 
-export async function playScenario(session: Session, scenario: Scenario): Promise<Record_> {
+async function measure(session: Session, step: Extract<Step, { do: 'measure' }>): Promise<{ ms: number; capped: boolean; stalled: boolean }> {
+  const { capMs = 900_000, pollMs = 100, stallMs } = step;
+  const truthy = (expression: string): Promise<boolean> => session.evaluate<boolean>(`Boolean(${expression})`);
+  let ms = 0;
+  let last: number | undefined;
+  let changedAt = 0;
+  while (!(await truthy(step.until))) {
+    if (ms >= capMs) return { ms, capped: true, stalled: false };
+    if (step.progress && stallMs) {
+      const now = await session.evaluate<number>(step.progress);
+      if (last === undefined || now !== last) { last = now; changedAt = ms; }
+      else if (ms - changedAt >= stallMs) return { ms, capped: false, stalled: true };
+    }
+    await session.advance(pollMs);
+    ms += pollMs;
+  }
+  return { ms, capped: false, stalled: false };
+}
+
+async function soak(session: Session, step: Extract<Step, { do: 'soak' }>): Promise<{ ok: boolean; violatedAtMs: number | null; seed: number | null; presses: number }> {
+  const { pollMs = 100, inputs } = step;
+  const seed = inputs ? inputs.seed ?? 1 : null;
+  const random = seededRandom(seed ?? 1);
+  const everyMs = inputs?.everyMs ?? 500;
+  let ms = 0;
+  let nextPressAt = 0;
+  let presses = 0;
+  while (ms < step.ms) {
+    if (!(await session.evaluate<boolean>(`Boolean(${step.invariant})`))) return { ok: false, violatedAtMs: ms, seed, presses };
+    if (inputs && inputs.keys.length && ms >= nextPressAt) {
+      const key = inputs.keys[Math.floor(random() * inputs.keys.length)] ?? inputs.keys[0] ?? '';
+      const hold = inputs.holdMs ?? 120;
+      await session.press(key, hold);
+      presses += 1;
+      ms += hold;
+      nextPressAt = ms + everyMs;
+    } else {
+      await session.advance(pollMs);
+      ms += pollMs;
+    }
+  }
+  return { ok: true, violatedAtMs: null, seed, presses };
+}
+
+export async function playScenario(session: Session, scenario: Scenario): Promise<ScenarioRecord> {
   const started = Date.now();
   const recorded: Record<string, unknown> = {};
   let error: string | undefined;
@@ -79,6 +134,8 @@ export async function playScenario(session: Session, scenario: Scenario): Promis
       else if (step.do === 'key') await session.press(step.key, step.ms);
       else if (step.do === 'waitFor') await session.until(step.expr, step);
       else if (step.do === 'eval') { const value = await session.evaluate(step.expr); if (step.as) recorded[step.as] = value; }
+      else if (step.do === 'measure') recorded[step.as] = await measure(session, step);
+      else if (step.do === 'soak') recorded[step.as] = await soak(session, step);
       else recorded[step.as] = await session.evaluate(step.expr);
     }
   } catch (caught) {
@@ -92,7 +149,7 @@ export async function playScenario(session: Session, scenario: Scenario): Promis
 }
 
 /** Opens the scenario's page, plays it, and closes the browser, whatever happens. */
-export async function runScenario(scenario: Scenario, options: Partial<OpenOptions> & { stepped: boolean }): Promise<Record_> {
+export async function runScenario(scenario: Scenario, options: Partial<OpenOptions> & { stepped: boolean }): Promise<ScenarioRecord> {
   const session = await openGame({
     url: scenario.url, html: scenario.html, engine: scenario.engine ?? 'raf', gameRef: scenario.gameRef, ...options,
   });
@@ -106,8 +163,8 @@ export async function runScenario(scenario: Scenario, options: Partial<OpenOptio
 export interface Comparison {
   id: string;
   equivalent: boolean;
-  real: Record_;
-  stepped: Record_;
+  real: ScenarioRecord;
+  stepped: ScenarioRecord;
   differences: string[];
 }
 

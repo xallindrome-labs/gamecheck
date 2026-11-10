@@ -2,22 +2,7 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { test } from 'node:test';
 import { compareClocks, openGame, type Scenario } from '../src/index.js';
-
-const GAME = `<script>
-window.state = { x: 0, last: null, flag: false, beats: 0, keys: {}, dateMs: 0 };
-const t0 = Date.now();
-function frame(ts) {
-  if (state.last !== null) state.x += 100 * ((ts - state.last) / 1000) * (state.keys.ArrowRight ? 2 : 1);
-  state.last = ts;
-  state.dateMs = Date.now() - t0;
-  requestAnimationFrame(frame);
-}
-requestAnimationFrame(frame);
-setTimeout(() => { state.flag = true; }, 5000);
-setInterval(() => { state.beats += 1; }, 1000);
-addEventListener('keydown', (e) => { state.keys[e.key] = true; });
-addEventListener('keyup', (e) => { state.keys[e.key] = false; });
-</script>`;
+import { GAME } from './fixtures.js';
 
 test('raf engine: ten game seconds pass in well under ten real seconds, and every clock agrees', async () => {
   const session = await openGame({ html: GAME, engine: 'raf', stepped: true });

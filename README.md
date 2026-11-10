@@ -45,7 +45,14 @@ A scenario is JSON: steps, then expectations on what you recorded.
 }
 ```
 
-Steps: `advance`, `key` (held for game time), `waitFor` (an expression, polled in game time), `snapshot`, `eval`.
+Steps: `advance`, `key` (held for game time), `waitFor` (an expression, polled in game time), `snapshot`, `eval`, and two
+that turn a loop you would otherwise hand-write into a step:
+
+- `measure`: game time until an expression is true, with a cap and stall detection (a progress expression that stops
+  changing). It is a fight-length table in one step: `{ "do": "measure", "until": "boss.dead", "as": "fight", "capMs": 900000, "progress": "boss.hp", "stallMs": 60000 }`.
+- `soak`: play on for N game milliseconds, checking an invariant every poll and pressing a seeded random key now and then.
+  The first violation comes back with its game time and seed, so it replays exactly: a softlock or out-of-bounds hunt.
+
 Expectations: `equals`, `oneOf`, `min`, `max` at a dotted path in a snapshot.
 
 From code:
@@ -62,6 +69,15 @@ await game.close();
 ```
 
 With the `phaser` engine, give it an expression for your `Phaser.Game`: `{ engine: 'phaser', gameRef: 'window.__GAME__' }`.
+
+## For agents (MCP)
+
+`gamecheck-mcp` is an MCP server over stdio with two tools, `gamecheck_run` and `gamecheck_compare`. Results are one line
+plus only what failed, to spend few tokens.
+
+```json
+{ "mcpServers": { "gamecheck": { "command": "npx", "args": ["gamecheck-mcp"] } } }
+```
 
 ## Honest limits
 
