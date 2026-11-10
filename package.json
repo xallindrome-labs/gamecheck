@@ -1,0 +1,25 @@
+{
+  "name": "gamecheck",
+  "version": "0.1.0",
+  "description": "Fast, deterministic headless checks for browser games: drive the game loop yourself instead of waiting on the clock.",
+  "type": "module",
+  "license": "MIT",
+  "bin": { "gamecheck": "dist/src/cli.js" },
+  "main": "dist/src/index.js",
+  "types": "dist/src/index.d.ts",
+  "files": ["dist/src", "README.md", "LICENSE"],
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "tsc && node --test \"dist/test/*.test.js\""
+  },
+  "peerDependencies": { "playwright": ">=1.40" },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "phaser": "^3.90.0",
+    "playwright": "1.63.0",
+    "typescript": "^5.6.0"
+  },
+  "keywords": ["games", "testing", "headless", "playwright", "phaser", "deterministic", "virtual-time"]
+}

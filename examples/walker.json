@@ -1,0 +1,42 @@
+{
+  "id": "example.walker",
+  "proves": "A walker at 60 px/s has covered 300 px by the five-second mark, and not before.",
+  "engine": "raf",
+  "html": "<script>\nwindow.state = { x: 0, last: null, done: false };\nfunction frame(ts) { if (state.last !== null) state.x += 60 * ((ts - state.last) / 1000); state.last = ts; if (state.x >= 300) state.done = true; requestAnimationFrame(frame); }\nrequestAnimationFrame(frame);\n</script>",
+  "steps": [
+    {
+      "do": "advance",
+      "ms": 4000
+    },
+    {
+      "do": "snapshot",
+      "as": "early",
+      "expr": "({ done: window.state.done })"
+    },
+    {
+      "do": "waitFor",
+      "expr": "window.state.done",
+      "timeoutMs": 3000
+    },
+    {
+      "do": "snapshot",
+      "as": "arrived",
+      "expr": "({ x: Math.round(window.state.x / 10) * 10 })"
+    }
+  ],
+  "expect": [
+    {
+      "at": "early",
+      "path": "done",
+      "equals": false,
+      "why": "not there after four seconds"
+    },
+    {
+      "at": "arrived",
+      "path": "x",
+      "min": 300,
+      "max": 320,
+      "why": "300 px covered when it arrives"
+    }
+  ]
+}
