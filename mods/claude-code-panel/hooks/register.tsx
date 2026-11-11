@@ -145,7 +145,7 @@ export const register: Register = (on, options) => {
               {cur.phase === 'opening' ? 'opening the page (or waiting for the headless lock)' : `step ${cur.stepIndex}/${cur.stepCount}: ${cur.step}`}
             </Text>
             <Text dimColor>
-              game {(cur.gameMs / 1000).toFixed(1)} s · wall {seconds((at || snap.updatedAt) - cur.startedAt)}
+              {cur.gameMs > 0 ? `game ${(cur.gameMs / 1000).toFixed(1)} s · ` : ''}wall {seconds((at || snap.updatedAt) - cur.startedAt)}
             </Text>
           </Box>
         )}
