@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { Progress, progressFile } from './progress.js';
 import { readFileSync } from 'node:fs';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
@@ -30,8 +31,17 @@ server.registerTool('gamecheck_run', {
   description: 'Plays a game-check scenario in a headless browser, stepping the game by hand (fast and deterministic) unless real is set. Returns a short verdict and what failed.',
   inputSchema: { ...shared, real: z.boolean().optional().describe('Use the real clock instead of stepping the game') },
 }, async ({ scenario, url, gpu, real }) => {
-  const record = await runScenario(load(scenario, url), { gpu, stepped: !real });
-  return { content: [{ type: 'text' as const, text: summary(record) }], isError: !record.ok };
+  const loaded = load(scenario, url);
+  const target = progressFile();
+  const progress = target ? new Progress({ file: target, total: 1, label: 'gamecheck_run' }) : undefined;
+  progress?.begin(loaded);
+  try {
+    const record = await runScenario(loaded, { gpu, stepped: !real }, progress);
+    progress?.end({ id: record.id, ok: record.ok, ms: record.ms, why: record.error ?? record.observations.find((one) => !one.ok)?.why });
+    return { content: [{ type: 'text' as const, text: summary(record) }], isError: !record.ok };
+  } finally {
+    progress?.finish();
+  }
 });
 
 server.registerTool('gamecheck_compare', {

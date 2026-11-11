@@ -101,6 +101,19 @@ are given:
 window.__gamecheck = { state: () => ({ phase: 2, boss: { hp: 120, at: [40, 80] }, goals: ['reach the gate'] }) };
 ```
 
+## Watching a run
+
+`gamecheck run a.json b.json c.json --progress` plays the scenarios one after another and rewrites a small JSON file as
+it goes (`.gamecheck/progress.json`, or `--progress-file <path>`, or the `GAMECHECK_PROGRESS` environment variable,
+which the MCP server's `gamecheck_run` honours too). The file holds the run's counts, the scenario in flight, its
+current step and game time, the last results, and every failure. It is replaced whole and atomically, so anything can
+poll it: a terminal, a CI step, an editor panel. Progress is off unless asked for, and a failed write never stops a run.
+
+From code, `new Progress({ file, total })` is the writer, and it is a `ScenarioObserver` you can hand to `runScenario`.
+
+There is a Claude Code panel that draws this file live: `mods/claude-code-panel` (a bar, the scenario and step now,
+passed and failed counts, recent results, failures, and a "stalled" warning when the file stops changing).
+
 ## Honest limits
 
 - It drives game time, not the browser's. Anything that waits on real I/O (network, image decode) still takes real time;

@@ -50,6 +50,8 @@ export interface Session {
   readonly context: BrowserContext;
   readonly browser: Browser;
   readonly clock: Clock;
+  /** Game time advanced through this session so far (ms). */
+  readonly gameMs: number;
   advance(ms: number): Promise<void>;
   /**
    * Advances game time until loads the page started have finished and stayed quiet for a few frames. Costs no game time
@@ -81,9 +83,12 @@ export async function openGame(options: OpenOptions): Promise<Session> {
     const clock = options.stepped ? createSteppedClock(page, { engine: options.engine, gameRef: options.gameRef, frameMs: options.frameMs, render: options.render }) : createRealClock();
     await clock.start();
     const opened = browser;
+    let gameMs = 0;
+    const step = async (ms: number): Promise<void> => { await clock.advance(ms); gameMs += ms; };
     const session: Session = {
       page, context, browser: opened, clock,
-      advance: (ms) => clock.advance(ms),
+      get gameMs() { return gameMs; },
+      advance: step,
       async settle({ quietFrames = 3, timeoutMs = 5000 } = {}) {
         const began = Date.now();
         let advancedMs = 0;
@@ -93,14 +98,14 @@ export async function openGame(options: OpenOptions): Promise<Session> {
           if (pending === 0 && (advancedMs === 0 || (quiet += 1) >= quietFrames)) return { advancedMs, abandoned: false };
           if (pending > 0) quiet = 0;
           if (Date.now() - began > timeoutMs) return { advancedMs, abandoned: true };
-          await clock.advance(FRAME_MS);
+          await step(FRAME_MS);
           advancedMs += FRAME_MS;
           await new Promise((resolve) => setTimeout(resolve, 2));
         }
       },
       async press(key, holdMs = 80) {
         await page.keyboard.down(key);
-        await clock.advance(holdMs);
+        await step(holdMs);
         await page.keyboard.up(key);
       },
       evaluate: (expression) => page.evaluate((source) => (0, eval)(source), expression) as Promise<never>,
@@ -109,7 +114,7 @@ export async function openGame(options: OpenOptions): Promise<Session> {
         for (;;) {
           if (await page.evaluate((source) => Boolean((0, eval)(source)), expression)) return waited;
           if (waited >= timeoutMs) throw new Error(`${expression}: not true within ${timeoutMs} ms`);
-          await clock.advance(pollMs);
+          await step(pollMs);
           waited += pollMs;
           if (clock.stepped) await new Promise((resolve) => setTimeout(resolve, 1));
         }

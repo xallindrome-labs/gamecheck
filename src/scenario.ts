@@ -126,12 +126,36 @@ async function soak(session: Session, step: Extract<Step, { do: 'soak' }>): Prom
   return { ok: true, violatedAtMs: null, seed, presses };
 }
 
-export async function playScenario(session: Session, scenario: Scenario): Promise<ScenarioRecord> {
+/** Told where a scenario is while it plays. `Progress` implements it; anything else can. */
+export interface ScenarioObserver {
+  step?(index: number, count: number, label: string): void;
+  /** Called about twice a second of real time with the game time advanced so far. */
+  tick?(gameMs: number): void;
+}
+
+const clip = (text: string, max = 48): string => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
+
+/** A short human label for a step, for progress displays. */
+export function describeStep(step: Step): string {
+  switch (step.do) {
+    case 'advance': return `advance ${step.ms} ms`;
+    case 'key': return `press ${step.key}`;
+    case 'eval': return `eval ${clip(step.expr)}`;
+    case 'waitFor': return `wait for ${clip(step.expr)}`;
+    case 'snapshot': return `snapshot ${step.as}`;
+    case 'measure': return `measure ${step.as}: until ${clip(step.until)}`;
+    case 'soak': return `soak ${step.as}: ${step.ms} ms`;
+  }
+}
+
+export async function playScenario(session: Session, scenario: Scenario, observer?: ScenarioObserver): Promise<ScenarioRecord> {
   const started = Date.now();
   const recorded: Record<string, unknown> = {};
   let error: string | undefined;
+  const ticker = observer?.tick ? setInterval(() => observer.tick?.(session.gameMs), 500) : undefined;
   try {
-    for (const step of scenario.steps) {
+    for (const [index, step] of scenario.steps.entries()) {
+      observer?.step?.(index + 1, scenario.steps.length, describeStep(step));
       if (step.do === 'advance') await session.advance(step.ms);
       else if (step.do === 'key') await session.press(step.key, step.ms);
       else if (step.do === 'waitFor') await session.until(step.expr, step);
@@ -142,7 +166,10 @@ export async function playScenario(session: Session, scenario: Scenario): Promis
     }
   } catch (caught) {
     error = String((caught as Error).message ?? caught).split('\n')[0];
+  } finally {
+    if (ticker) clearInterval(ticker);
   }
+  observer?.tick?.(session.gameMs);
   const observations = error ? [] : scenario.expect.map((expectation) => judge(expectation, recorded));
   return {
     id: scenario.id, clock: session.clock.stepped ? 'stepped' : 'real', ok: !error && observations.every((one) => one.ok),
@@ -151,12 +178,12 @@ export async function playScenario(session: Session, scenario: Scenario): Promis
 }
 
 /** Opens the scenario's page, plays it, and closes the browser, whatever happens. */
-export async function runScenario(scenario: Scenario, options: Partial<OpenOptions> & { stepped: boolean }): Promise<ScenarioRecord> {
+export async function runScenario(scenario: Scenario, options: Partial<OpenOptions> & { stepped: boolean }, observer?: ScenarioObserver): Promise<ScenarioRecord> {
   const session = await openGame({
     url: scenario.url, html: scenario.html, engine: scenario.engine ?? 'raf', gameRef: scenario.gameRef, render: scenario.render, ...options,
   });
   try {
-    return await playScenario(session, scenario);
+    return await playScenario(session, scenario, observer);
   } finally {
     await session.close();
   }

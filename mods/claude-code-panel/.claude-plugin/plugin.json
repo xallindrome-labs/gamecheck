@@ -1,0 +1,20 @@
+{
+  "name": "gamecheck-progress",
+  "version": "0.1.0",
+  "description": "A pane that shows gamecheck test runs live: the scenario in flight, its step, the pass/fail count, and the failures.",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "progressFile": {
+      "type": "string",
+      "title": "Progress file",
+      "description": "The file gamecheck writes live progress to (gamecheck run --progress writes .gamecheck/progress.json under the folder it runs in). A relative path is under the session's working folder.",
+      "default": ".gamecheck/progress.json"
+    },
+    "autoOpen": {
+      "type": "boolean",
+      "title": "Open the pane when a run starts",
+      "description": "Open the pane by itself when a new run appears in the progress file.",
+      "default": true
+    }
+  }
+}
