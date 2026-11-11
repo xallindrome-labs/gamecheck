@@ -24,9 +24,26 @@ const shared = {
 const tuned = ({ gpu, lean, render, drawEvery, priority, memoryMb, viewport }: { gpu?: boolean; lean?: boolean; render?: boolean; drawEvery?: number; priority?: 'low' | 'normal' | 'high'; memoryMb?: number; viewport?: { width: number; height: number } }) => ({ gpu, lean, render, drawEvery, priority, memoryMb, viewport });
 const cleanly = <T extends object>(options: T): T => Object.fromEntries(Object.entries(options).filter(([, value]) => value !== undefined)) as T;
 
+// An agent's tool call can be steered by what it read, so the server reads only scenario files and opens only web pages:
+// a file: or other URL could hand a local file's contents back through state or a screenshot.
+function webPage(url: string | undefined): string | undefined {
+  if (url === undefined) return url;
+  let protocol: string;
+  try { protocol = new URL(url).protocol; } catch { throw new Error(`not a URL: ${url}`); }
+  if (protocol !== 'http:' && protocol !== 'https:') throw new Error(`gamecheck-mcp opens only http and https pages, not ${protocol} (use html for an inline page)`);
+  return url;
+}
+
 function load(input: string | Record<string, unknown>, url?: string): Scenario {
-  const scenario = (typeof input === 'string' ? JSON.parse(readFileSync(input, 'utf8')) : input) as Scenario;
-  return url ? { ...scenario, url } : scenario;
+  let scenario: Scenario;
+  if (typeof input === 'string') {
+    if (!input.toLowerCase().endsWith('.json')) throw new Error(`a scenario path must name a .json file: ${input}`);
+    // JSON.parse's own error quotes the text it choked on; keep a file's contents out of the reply.
+    try { scenario = JSON.parse(readFileSync(input, 'utf8')) as Scenario; } catch { throw new Error(`could not read a scenario from ${input}`); }
+  } else scenario = input as unknown as Scenario;
+  const loaded = url ? { ...scenario, url } : scenario;
+  webPage(loaded.url);
+  return loaded;
 }
 
 /** One line per result, so an agent spends few tokens; the full record only for what failed. */
@@ -86,7 +103,7 @@ server.registerTool('gamecheck_open', {
     real: z.boolean().optional().describe('Run on the real clock instead of stepping'),
     ...tuning,
   },
-}, async ({ url, html, engine, gameRef, real, ...rest }) => json(await game.open({ url, html, engine, gameRef, ...cleanly(tuned(rest)), stepped: !real })));
+}, async ({ url, html, engine, gameRef, real, ...rest }) => json(await game.open({ url: webPage(url), html, engine, gameRef, ...cleanly(tuned(rest)), stepped: !real })));
 
 server.registerTool('gamecheck_step', {
   description: 'Advances game time and returns what happened. Give ms or frames, or until (an expression to wait for, with maxMs). inputs presses keys on the game clock: [{ key, atMs, holdMs }] with offsets from the start of the step. report is named expressions read before and after, and the result lists which changed, so you can check an input did something without a second call. Caps: 600000 ms per call and a wall-time budget; wallBudgetExceeded says it stopped early.',
@@ -123,7 +140,10 @@ server.registerTool('gamecheck_close', {
   inputSchema: {},
 }, async () => json(await game.close()));
 
-process.on('SIGINT', () => { void game.close().finally(() => process.exit(0)); });
-process.on('SIGTERM', () => { void game.close().finally(() => process.exit(0)); });
+const shutdown = (): void => { void game.close().finally(() => process.exit(0)); };
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);
+// A client that goes away closes our stdin: close the browser and free the lock then, not 10 idle minutes later.
+process.stdin.once('end', shutdown);
 
 await server.connect(new StdioServerTransport());

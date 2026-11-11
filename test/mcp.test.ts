@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -74,6 +74,43 @@ test('mcp: an interactive session shows in the panel file while it is open, and 
     await client.close();
     cleanup(dir);
   }
+});
+
+test('mcp: opens only web pages and reads only scenario files, and never quotes a file it could not parse', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'gamecheck-mcp-'));
+  const secret = join(dir, 'secret.json');
+  writeFileSync(secret, 'TOKEN=do-not-echo-me');
+  const client = await connect(dir);
+  try {
+    const page = await client.callTool({ name: 'gamecheck_open', arguments: { url: 'file:///etc/hosts' } });
+    assert.match(text(page), /only http and https/);
+    const inScenario = await client.callTool({ name: 'gamecheck_run', arguments: { scenario: { ...SCENARIO, html: undefined, url: 'file:///etc/hosts' } } });
+    assert.match(text(inScenario), /only http and https/);
+    const notJson = await client.callTool({ name: 'gamecheck_run', arguments: { scenario: join(dir, 'notes.txt') } });
+    assert.match(text(notJson), /must name a \.json file/);
+    const unparsable = await client.callTool({ name: 'gamecheck_run', arguments: { scenario: secret } });
+    assert.match(text(unparsable), /could not read a scenario/);
+    assert.doesNotMatch(text(unparsable), /do-not-echo-me/);
+  } finally {
+    await client.close();
+    cleanup(dir);
+  }
+});
+
+test('mcp: a client that goes away with a game open closes the browser and frees the lock', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'gamecheck-mcp-'));
+  const lock = join(dir, 'test.lock');
+  const client = new Client({ name: 'test', version: '0' });
+  await client.connect(new StdioClientTransport({ command: process.execPath, args: [MCP], cwd: dir, env: { ...(process.env as Record<string, string>), GAMECHECK_LOCK: lock, GAMECHECK_PROGRESS: 'off' }, stderr: 'ignore' }));
+  try {
+    await client.callTool({ name: 'gamecheck_open', arguments: { html: GAME, engine: 'raf' } });
+    assert.ok(existsSync(lock), 'the open game holds the lock');
+  } finally {
+    await client.close();
+  }
+  for (let waited = 0; waited < 5000 && existsSync(lock); waited += 100) await new Promise((resolve) => setTimeout(resolve, 100));
+  assert.equal(existsSync(lock), false, 'the lock is gone once the client has left');
+  cleanup(dir);
 });
 
 test('mcp: GAMECHECK_PROGRESS=off turns the panel file off', async () => {

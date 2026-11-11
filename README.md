@@ -74,7 +74,7 @@ With the `phaser` engine, give it an expression for your `Phaser.Game`: `{ engin
 
 ## For agents (MCP)
 
-`gamecheck-mcp` is an MCP server over stdio. Results are short on purpose, to spend few tokens. Its SDK (`@modelcontextprotocol/sdk` and `zod`) is an optional add-on, so a harness that only imports gamecheck's modules doesn't install it; the line below fetches all three.
+`gamecheck-mcp` is an MCP server over stdio. Results are short on purpose, to spend few tokens. Its SDK (`@modelcontextprotocol/sdk` and `zod`) is an optional add-on, so a harness that only imports gamecheck's modules doesn't install it; the line below fetches all three. Because an agent can be steered by what it reads, the server opens only http and https pages (or inline `html`) and reads only `.json` scenario files, and it closes the browser and frees the lock as soon as its client disconnects.
 
 ```json
 { "mcpServers": { "gamecheck": { "command": "npx", "args": ["-y", "-p", "@xallindrome-labs/gamecheck", "-p", "@modelcontextprotocol/sdk", "-p", "zod", "gamecheck-mcp"] } } }
