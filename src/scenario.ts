@@ -37,6 +37,8 @@ export interface Scenario {
   html?: string;
   engine?: OpenOptions['engine'];
   gameRef?: string;
+  /** Phaser engine: false steps without drawing. */
+  render?: boolean;
   steps: Step[];
   expect: Expectation[];
 }
@@ -151,7 +153,7 @@ export async function playScenario(session: Session, scenario: Scenario): Promis
 /** Opens the scenario's page, plays it, and closes the browser, whatever happens. */
 export async function runScenario(scenario: Scenario, options: Partial<OpenOptions> & { stepped: boolean }): Promise<ScenarioRecord> {
   const session = await openGame({
-    url: scenario.url, html: scenario.html, engine: scenario.engine ?? 'raf', gameRef: scenario.gameRef, ...options,
+    url: scenario.url, html: scenario.html, engine: scenario.engine ?? 'raf', gameRef: scenario.gameRef, render: scenario.render, ...options,
   });
   try {
     return await playScenario(session, scenario);

@@ -1,7 +1,7 @@
 {
   "name": "gamecheck",
   "version": "0.1.0",
-  "description": "Fast, deterministic headless checks for browser games: drive the game loop yourself instead of waiting on the clock.",
+  "description": "Run browser games faster in headless tests and agent sessions: drive game time yourself instead of waiting on the clock.",
   "type": "module",
   "license": "MIT",
   "bin": {

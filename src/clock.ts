@@ -7,6 +7,11 @@ export interface ClockOptions {
   /** A JS expression for the Phaser.Game instance in the page, such as `window.__GAME__`. Phaser engine only. */
   gameRef?: string;
   frameMs?: number;
+  /**
+   * Phaser engine only. false steps with Phaser's headlessStep, which updates every scene and skips drawing: the fastest
+   * way to run logic. Anything that reads values the renderer computes (camera view, world-point conversion) is stale.
+   */
+  render?: boolean;
 }
 
 export interface Clock {
@@ -160,10 +165,12 @@ export function createSteppedClock(page: Page, options: ClockOptions): Clock {
       }, [ref, frame]);
     },
     async advance(ms) {
-      await page.evaluate(async ([expression, span]) => {
+      await page.evaluate(async ([expression, span, headless]) => {
         const state = (window as unknown as { __gamecheckStep?: { vt: number; frame: number; perf0: number } }).__gamecheckStep;
         if (!state) throw new Error('the clock is not started');
-        const game = (0, eval)(expression as string) as { step(time: number, delta: number): void };
+        const phaser = (0, eval)(expression as string) as { step(time: number, delta: number): void; headlessStep?: (time: number, delta: number) => void };
+        if (headless && typeof phaser.headlessStep !== 'function') throw new Error('this Phaser has no headlessStep (3.60 or later has it)');
+        const game = { step: (time: number, delta: number): void => (headless ? phaser.headlessStep?.(time, delta) : phaser.step(time, delta)) };
         const count = Math.max(1, Math.round((span as number) / state.frame));
         for (let i = 0; i < count; i += 1) {
           state.vt += state.frame;
@@ -171,7 +178,7 @@ export function createSteppedClock(page: Page, options: ClockOptions): Clock {
           await Promise.resolve();
           if (i % 300 === 299) await new Promise((resolve) => setTimeout(resolve, 0));
         }
-      }, [ref, ms]);
+      }, [ref, ms, options.render === false]);
     },
     async stop() {
       await page.evaluate((expression) => {

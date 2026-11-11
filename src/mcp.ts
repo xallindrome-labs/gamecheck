@@ -54,8 +54,9 @@ server.registerTool('gamecheck_open', {
     engine: z.enum(['raf', 'phaser']).default('raf'), gameRef: z.string().optional(),
     gpu: z.boolean().optional().describe('Faster rendering for logic checks; leave off for anything judged by pixels'),
     real: z.boolean().optional().describe('Run on the real clock instead of stepping'),
+    render: z.boolean().optional().describe('Phaser only: false skips drawing for the fastest steps; camera-view values and screenshots go stale'),
   },
-}, async ({ url, html, engine, gameRef, gpu, real }) => json(await game.open({ url, html, engine, gameRef, gpu, stepped: !real })));
+}, async ({ url, html, engine, gameRef, gpu, real, render }) => json(await game.open({ url, html, engine, gameRef, gpu, render, stepped: !real })));
 
 server.registerTool('gamecheck_step', {
   description: 'Advances game time and returns what happened. Give ms or frames, or until (an expression to wait for, with maxMs). inputs presses keys on the game clock: [{ key, atMs, holdMs }] with offsets from the start of the step. report is named expressions read before and after, and the result lists which changed, so you can check an input did something without a second call. Caps: 600000 ms per call and a wall-time budget; wallBudgetExceeded says it stopped early.',

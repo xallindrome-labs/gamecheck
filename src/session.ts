@@ -25,6 +25,8 @@ export interface OpenOptions {
   /** Give up waiting for the lock after this long, with an error that names the holder. */
   lockTimeoutMs?: number;
   frameMs?: number;
+  /** Phaser engine: false steps without drawing (Phaser's headlessStep). See ClockOptions.render. */
+  render?: boolean;
   /** Runs after the page has loaded and before the clock starts: load a library, boot the game. */
   beforeStart?: (page: Page) => Promise<void>;
 }
@@ -61,7 +63,7 @@ export async function openGame(options: OpenOptions): Promise<Session> {
     if (options.url) await page.goto(options.url);
     else await page.setContent(options.html ?? '');
     await options.beforeStart?.(page);
-    const clock = options.stepped ? createSteppedClock(page, { engine: options.engine, gameRef: options.gameRef, frameMs: options.frameMs }) : createRealClock();
+    const clock = options.stepped ? createSteppedClock(page, { engine: options.engine, gameRef: options.gameRef, frameMs: options.frameMs, render: options.render }) : createRealClock();
     await clock.start();
     const opened = browser;
     const session: Session = {

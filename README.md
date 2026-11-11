@@ -1,19 +1,21 @@
 # gamecheck
 
-Fast, deterministic headless checks for browser games. Instead of waiting on the clock, gamecheck drives the game loop
-itself, so a 100 second boss fight takes a few seconds of wall time, and the same scenario gives the same answer every run.
+Run a browser game faster than real time, headless. gamecheck drives the game's clock itself instead of waiting on it, so a
+100 second boss fight takes a few seconds of wall time, and the same run gives the same result every time. What you use
+that speed for is up to you: tests, fight-length tables, soak runs, or an AI agent playing and inspecting a game.
 
-It sits on top of [Playwright](https://playwright.dev) and was extracted from a Phaser 3 action game whose checks were
-slow for two reasons: CPU (software) rendering, and fights that ran in real time.
+It sits on top of [Playwright](https://playwright.dev) and was extracted from a Phaser 3 action game whose headless runs
+were slow for two reasons: CPU (software) rendering, and fights that ran in real time.
 
 ## What it does
 
-- **Steps game time by hand.** Two ways to drive time, so most engines work:
+- **Runs game time faster.** Two ways to drive time, so most engines work:
   - `raf`: a virtual clock for `requestAnimationFrame`, `setTimeout`, `setInterval`, `performance.now` and `Date.now`,
     installed before the page loads. Works with any engine that runs on those (Phaser, PixiJS, three.js, your own loop).
-  - `phaser`: steps `Phaser.Game` directly with `game.step(time, delta)`. Can start at any point in a run.
-- **Proves its own equivalence.** `gamecheck compare` plays a scenario on the real clock and on the stepped one and lists
-  every verdict and observed value that differs. Use it before you trust a stepped result.
+  - `phaser`: steps `Phaser.Game` directly. With `render: false` it uses Phaser's `headlessStep`, which runs every scene's
+    logic and skips drawing, the fastest mode there is.
+- **Tells you whether the fast run can be trusted.** `gamecheck compare` plays a scenario on the real clock and on the stepped
+  one and lists every verdict and observed value that differs. Use it before you rely on a stepped result.
 - **Keeps the machine light.** One headless run at a time, through a lock file (a holder that is gone is taken over).
 - **Speaks tersely.** `--terse` prints one line, so an agent reading it spends few tokens.
 
@@ -68,7 +70,7 @@ console.log(await game.evaluate('window.state'));
 await game.close();
 ```
 
-With the `phaser` engine, give it an expression for your `Phaser.Game`: `{ engine: 'phaser', gameRef: 'window.__GAME__' }`.
+With the `phaser` engine, give it an expression for your `Phaser.Game`: `{ engine: 'phaser', gameRef: 'window.__GAME__' }`. Add `render: false` (CLI: `--no-render`) for the fastest steps.
 
 ## For agents (MCP)
 
@@ -107,6 +109,9 @@ window.__gamecheck = { state: () => ({ phase: 2, boss: { hp: 120, at: [40, 80] }
   such gap because it starts with the page.
 - Playwright's own `page.clock` did not drive a Phaser game in our tests (frames did not advance with it), which is why
   this exists.
+- `render: false` skips drawing, so anything that reads values the renderer computes goes stale: Phaser's camera view and
+  world-point conversion, for one. Run `compare` on a scenario before relying on it, and use `render: true` where aiming or
+  hit tests depend on the camera.
 - Rendering is not time-warped: `--gpu` makes frames cheap, software rendering stays the reference for pixels. Take
   screenshots on the real clock.
 - A game that reads the wall clock for gameplay (a `setTimeout`-based pause, say) is better checked on the real clock:
@@ -126,7 +131,15 @@ gamecheck stands on ideas from others. [`@sinonjs/fake-timers`](https://github.c
 [overcrank](https://github.com/upspawn/overcrank) do it to record video; OpenAI's `develop-web-game` skill has games expose
 `window.advanceTime(ms)`; [godot-mcp](https://github.com/satelliteoflove/godot-mcp) gives agents freeze, step and
 step-until tools, and a state digest, for Godot. What gamecheck adds for browser games is time you can compare, soak with
-a seed, measure with a stall guard, and report to an agent tersely. These notes are from a quick survey, not an audit.
+a seed, measure with a stall guard, and report to an agent tersely.
+
+The closest relative we found is the multi-instance test harness in [clik-engine](https://pvydro.github.io/clik-engine/) (MIT),
+which stops a Phaser game's loop and calls `headlessStep` at a fixed timestep, with seeded scripted, random-fuzz and policy
+strategies and a pass/fail report. It is Phaser-specific, and its docs do not mention an MCP server or a real-versus-stepped
+comparison. [chaosbringer](https://www.npmjs.com/package/chaosbringer) does seeded random actions with invariants and a repro
+command, for web pages in general and without a virtual clock. Replit has written about faking the browser's time to render
+video. Other engines do the equivalent natively (Godot's `--fixed-fps`, Unity's `Time.captureFramerate`). These notes are
+from a quick survey, not an audit, and gamecheck is not the first tool to step a game's clock.
 
 ## License
 

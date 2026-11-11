@@ -11,6 +11,7 @@ gamecheck compare <scenario.json> [options]   play it on the real clock and the 
   --game-ref <expr>     phaser only: an expression for the Phaser.Game in the page, such as window.__GAME__
   --real                run: use the real clock
   --gpu                 draw on the real GPU (faster; software rendering stays the pixel reference)
+  --no-render           phaser only: step with headlessStep, which skips drawing (fastest; camera-view values go stale)
   --headed              show the browser
   --terse               one summary line
   --json                full JSON result`;
@@ -37,6 +38,7 @@ async function main(): Promise<number> {
   if (typeof opt.url === 'string') scenario.url = opt.url;
   if (typeof opt.engine === 'string') scenario.engine = opt.engine as Engine;
   if (typeof opt.gameRef === 'string') scenario.gameRef = opt.gameRef;
+  if (opt.noRender) scenario.render = false;
   const shared = { gpu: Boolean(opt.gpu), headed: Boolean(opt.headed) };
   if (command === 'compare') {
     const result = await compareClocks(scenario, shared);
