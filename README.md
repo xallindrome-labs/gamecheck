@@ -112,7 +112,16 @@ poll it: a terminal, a CI step, an editor panel. Progress is off unless asked fo
 From code, `new Progress({ file, total })` is the writer, and it is a `ScenarioObserver` you can hand to `runScenario`.
 
 There is a Claude Code panel that draws this file live: `mods/claude-code-panel` (a bar, the scenario and step now,
-passed and failed counts, recent results, failures, and a "stalled" warning when the file stops changing).
+passed and failed counts, recent results, failures, and a "stalled" warning when the file stops changing). Install it at
+the prompt of a terminal Claude Code session:
+
+```
+/plugin install gamecheck-progress --marketplace xallindrome-labs/gamecheck
+```
+
+or from a shell: `claude plugin install gamecheck-progress --marketplace xallindrome-labs/gamecheck`. Then run a check with
+`--progress` from the folder Claude Code is open in (or point the mod's "Progress file" setting at the file), and type
+`/gamecheck` if the pane does not open by itself.
 
 ## Honest limits
 

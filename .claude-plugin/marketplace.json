@@ -1,0 +1,14 @@
+{
+  "name": "gamecheck",
+  "owner": {
+    "name": "Xallindrome Labs"
+  },
+  "plugins": [
+    {
+      "name": "gamecheck-progress",
+      "source": "./mods/claude-code-panel",
+      "description": "A Claude Code pane that shows gamecheck test runs live: the scenario in flight, its step, pass/fail counts and failures."
+    }
+  ],
+  "description": "gamecheck: faster, repeatable headless game checks, and a Claude Code panel that shows them live."
+}
