@@ -22,7 +22,7 @@ were slow for two reasons: CPU (software) rendering, and fights that ran in real
 ## Quick start
 
 ```sh
-npm install gamecheck playwright
+npm install @xallindrome-labs/gamecheck playwright
 npx playwright install chromium
 npx gamecheck run examples/walker.json
 npx gamecheck compare examples/walker.json
@@ -60,7 +60,7 @@ Expectations: `equals`, `oneOf`, `min`, `max` at a dotted path in a snapshot.
 From code:
 
 ```ts
-import { openGame } from 'gamecheck';
+import { openGame } from '@xallindrome-labs/gamecheck';
 
 const game = await openGame({ url, engine: 'raf', stepped: true });
 await game.until('window.__ready');
@@ -77,7 +77,7 @@ With the `phaser` engine, give it an expression for your `Phaser.Game`: `{ engin
 `gamecheck-mcp` is an MCP server over stdio. Results are short on purpose, to spend few tokens.
 
 ```json
-{ "mcpServers": { "gamecheck": { "command": "npx", "args": ["gamecheck-mcp"] } } }
+{ "mcpServers": { "gamecheck": { "command": "npx", "args": ["-y", "-p", "@xallindrome-labs/gamecheck", "gamecheck-mcp"] } } }
 ```
 
 Whole scenarios: `gamecheck_run` and `gamecheck_compare`.
