@@ -126,20 +126,32 @@ faster, more on long ones. Short scenarios gain little, because page and scene l
 
 ## Related work
 
-gamecheck stands on ideas from others. [`@sinonjs/fake-timers`](https://github.com/sinonjs/fake-timers) and Playwright's
-`page.clock` fake the browser's timers and frames; [timeweb](https://github.com/tungs/timeweb) and
-[overcrank](https://github.com/upspawn/overcrank) do it to record video; OpenAI's `develop-web-game` skill has games expose
-`window.advanceTime(ms)`; [godot-mcp](https://github.com/satelliteoflove/godot-mcp) gives agents freeze, step and
-step-until tools, and a state digest, for Godot. What gamecheck adds for browser games is time you can compare, soak with
-a seed, measure with a stall guard, and report to an agent tersely.
+gamecheck is not the first tool to run a browser game on a controlled clock, and it is young company. In a survey in
+November 2026 we found these, from their READMEs and docs (not their source), several of them weeks old:
 
-The closest relative we found is the multi-instance test harness in [clik-engine](https://pvydro.github.io/clik-engine/) (MIT),
-which stops a Phaser game's loop and calls `headlessStep` at a fixed timestep, with seeded scripted, random-fuzz and policy
-strategies and a pass/fail report. It is Phaser-specific, and its docs do not mention an MCP server or a real-versus-stepped
-comparison. [chaosbringer](https://www.npmjs.com/package/chaosbringer) does seeded random actions with invariants and a repro
-command, for web pages in general and without a virtual clock. Replit has written about faking the browser's time to render
-video. Other engines do the equivalent natively (Godot's `--fixed-fps`, Unity's `Time.captureFramerate`). These notes are
-from a quick survey, not an audit, and gamecheck is not the first tool to step a game's clock.
+- [playproof](https://github.com/EmirhanOzl/playproof) (MIT): the closest. It injects a virtual clock before page scripts
+  (frames, timers, `performance.now`, `Date`, CSS animations) with a seeded `Math.random`, says it gives identical frames
+  across Canvas 2D, Phaser 3, PixiJS 8, three.js, Godot web and Unity WebGL, runs as an MCP server, and has a seeded `monkey`
+  random player that reports hangs and soft-locks with a reproduce command. It states that the clock is not frame-exact for
+  games that simulate in a Web Worker.
+- [paprika3d](https://github.com/paprika3d/paprika3d) (Apache-2.0): an MCP server for three.js and WebGL pages with an injected,
+  paused virtual clock, an `interact` tool with `until` and `expect`, and saved plays that can be re-run.
+- [debuff](https://github.com/debuffjp/debuff) (MIT): a game framework with its own fixed-step clock, JSON scenarios,
+  a seeded `fuzz` that emits a replay, and an MCP server. Only for games built on it.
+- [clik-engine](https://pvydro.github.io/clik-engine/) (MIT): its test harness stops a Phaser game's loop and calls
+  `headlessStep` at a fixed timestep, with seeded scripted, random-fuzz and policy strategies.
+- Clock building blocks and neighbours: [`@sinonjs/fake-timers`](https://github.com/sinonjs/fake-timers) and Playwright's
+  `page.clock`; [timeweb](https://github.com/tungs/timeweb) and [overcrank](https://github.com/upspawn/overcrank), which do it to
+  record video; [chaosbringer](https://www.npmjs.com/package/chaosbringer), seeded random actions with invariants for web
+  pages; OpenAI's `develop-web-game` skill (games expose `window.advanceTime(ms)`);
+  [godot-mcp](https://github.com/satelliteoflove/godot-mcp), freeze and step tools for Godot. Godot, Unity and Bevy have
+  native fixed-step modes too.
+
+What we did not find in any of them, which is what gamecheck adds: a `compare` that plays a scenario on the real clock and on
+the stepped one and diffs the results; a Phaser `headlessStep` adapter on top of an engine-agnostic clock; a soak run that
+checks an invariant you write and replays from its seed; a `measure` step with a cap and a stall guard; and a lock shared
+with other tools that run headless browsers. The survey was quick and search ranking is poor, so treat "did not find" as
+exactly that. Try playproof too, and use whichever fits.
 
 ## License
 
