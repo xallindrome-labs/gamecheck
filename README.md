@@ -72,11 +72,31 @@ With the `phaser` engine, give it an expression for your `Phaser.Game`: `{ engin
 
 ## For agents (MCP)
 
-`gamecheck-mcp` is an MCP server over stdio with two tools, `gamecheck_run` and `gamecheck_compare`. Results are one line
-plus only what failed, to spend few tokens.
+`gamecheck-mcp` is an MCP server over stdio. Results are short on purpose, to spend few tokens.
 
 ```json
 { "mcpServers": { "gamecheck": { "command": "npx", "args": ["gamecheck-mcp"] } } }
+```
+
+Whole scenarios: `gamecheck_run` and `gamecheck_compare`.
+
+Step by step, for an agent that wants to look, act and look again. Time stands still between calls, so nothing happens
+that the agent did not ask for:
+
+| Tool | What it does |
+| --- | --- |
+| `gamecheck_open` | Opens a page and takes the run lock. Closes itself after 10 idle minutes. |
+| `gamecheck_step` | Advances `ms` or `frames`, or `until` an expression is true. `inputs` presses keys on the game clock. `report` reads named expressions before and after and says which changed. Capped per call, with a wall-time budget that is flagged when it cuts a step short. |
+| `gamecheck_state` | Named expressions, or the page's own digest. Rounded, and capped with a dropped count. |
+| `gamecheck_watch` | Plays on and returns a summary per expression (start, end, min, max, mean, slope, when the extremes happened, a capped timeline of changes) instead of raw samples. |
+| `gamecheck_screenshot` | A PNG, for how something looks. Costs far more than a state read. |
+| `gamecheck_close` | Lets the lock go. |
+
+A game can help the agent read it cheaply by offering a curated digest, which `gamecheck_state` uses when no expressions
+are given:
+
+```js
+window.__gamecheck = { state: () => ({ phase: 2, boss: { hp: 120, at: [40, 80] }, goals: ['reach the gate'] }) };
 ```
 
 ## Honest limits
@@ -98,6 +118,15 @@ plus only what failed, to spend few tokens.
 From the game it came out of, one run each, so read them as rough: a boss fight of 262 game seconds took 24.7 s of wall
 time including 13 s of setup (about 380 s in real time with software rendering), and scenarios ran 2 to 4 times
 faster, more on long ones. Short scenarios gain little, because page and scene loading stay in real time.
+
+## Related work
+
+gamecheck stands on ideas from others. [`@sinonjs/fake-timers`](https://github.com/sinonjs/fake-timers) and Playwright's
+`page.clock` fake the browser's timers and frames; [timeweb](https://github.com/tungs/timeweb) and
+[overcrank](https://github.com/upspawn/overcrank) do it to record video; OpenAI's `develop-web-game` skill has games expose
+`window.advanceTime(ms)`; [godot-mcp](https://github.com/satelliteoflove/godot-mcp) gives agents freeze, step and
+step-until tools, and a state digest, for Godot. What gamecheck adds for browser games is time you can compare, soak with
+a seed, measure with a stall guard, and report to an agent tersely. These notes are from a quick survey, not an audit.
 
 ## License
 

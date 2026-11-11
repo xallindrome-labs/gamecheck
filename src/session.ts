@@ -22,6 +22,8 @@ export interface OpenOptions {
   viewport?: { width: number; height: number };
   /** Hold the one-headless-run-at-a-time lock (default true). */
   lock?: boolean;
+  /** Give up waiting for the lock after this long, with an error that names the holder. */
+  lockTimeoutMs?: number;
   frameMs?: number;
   /** Runs after the page has loaded and before the clock starts: load a library, boot the game. */
   beforeStart?: (page: Page) => Promise<void>;
@@ -47,7 +49,7 @@ export interface Session {
 
 export async function openGame(options: OpenOptions): Promise<Session> {
   if (!options.url && options.html === undefined) throw new Error('openGame needs a url or html');
-  const release = options.lock === false ? () => {} : await takeLock(`gamecheck ${options.url ?? 'html'}`);
+  const release = options.lock === false ? () => {} : await takeLock(`gamecheck ${options.url ?? 'html'}`, options.lockTimeoutMs);
   let browser: Browser | undefined;
   try {
     const { chromium } = await import('playwright');

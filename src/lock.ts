@@ -19,8 +19,9 @@ const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(
  * One headless run at a time on a machine: browsers are heavy. The lock is a file holding { pid, what, at }; a holder
  * that is gone is taken over. Point GAMECHECK_LOCK at another tool's lock file (same format) to share it.
  */
-export async function takeLock(what: string): Promise<() => void> {
+export async function takeLock(what: string, timeoutMs?: number): Promise<() => void> {
   const file = lockPath();
+  const giveUpAt = timeoutMs === undefined ? Infinity : Date.now() + timeoutMs;
   let told = false;
   for (;;) {
     try {
@@ -41,6 +42,7 @@ export async function takeLock(what: string): Promise<() => void> {
         try { unlinkSync(file); } catch { /* another run took it first */ }
         continue;
       }
+      if (Date.now() >= giveUpAt) throw new Error(`another headless run holds the lock${holder ? `: ${holder.what} (pid ${holder.pid}, since ${holder.at})` : ''}; waited ${timeoutMs} ms`);
       if (holder && !told) console.error(`[gamecheck] waiting for another headless run: ${holder.what} (pid ${holder.pid}, since ${holder.at})`);
       told = told || Boolean(holder);
       await wait(holder ? 5000 : 500);
