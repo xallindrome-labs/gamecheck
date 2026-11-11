@@ -12,6 +12,12 @@ export interface ClockOptions {
    * way to run logic. Anything that reads values the renderer computes (camera view, world-point conversion) is stale.
    */
   render?: boolean;
+  /**
+   * Phaser engine only. Draw one frame in N and step the rest with headlessStep. The last frame of every advance is always
+   * drawn, so what you read afterwards (camera, screen positions) is current; in between it can be up to N frames old.
+   * Ignored when render is false (nothing is drawn). The raf engine cannot skip drawing, because the game's own callback does both.
+   */
+  drawEvery?: number;
 }
 
 export interface Clock {
@@ -227,6 +233,8 @@ export function createSteppedClock(page: Page, options: ClockOptions): Clock {
     };
   }
   const ref = options.gameRef;
+  const every = options.drawEvery ?? 1;
+  if (!Number.isInteger(every) || every < 1) throw new Error('drawEvery must be a whole number, 1 or more');
   if (!ref) throw new Error('the phaser engine needs gameRef, an expression for the Phaser.Game in the page, such as "window.__GAME__"');
   return {
     stepped: true,
@@ -244,21 +252,24 @@ export function createSteppedClock(page: Page, options: ClockOptions): Clock {
       }, [ref, frame]);
     },
     async advance(ms) {
-      await page.evaluate(async ([expression, span, headless]) => {
-        const state = (window as unknown as { __gamecheckStep?: { vt: number; frame: number; perf0: number } }).__gamecheckStep;
+      await page.evaluate(async ([expression, span, headless, drawEvery]) => {
+        const state = (window as unknown as { __gamecheckStep?: { vt: number; frame: number; perf0: number; n?: number } }).__gamecheckStep;
         if (!state) throw new Error('the clock is not started');
         const phaser = (0, eval)(expression as string) as { step(time: number, delta: number): void; headlessStep?: (time: number, delta: number) => void };
-        if (headless && typeof phaser.headlessStep !== 'function') throw new Error('this Phaser has no headlessStep (3.60 or later has it)');
-        const game = { step: (time: number, delta: number): void => (headless ? phaser.headlessStep?.(time, delta) : phaser.step(time, delta)) };
+        const every = drawEvery as number;
+        if ((headless || every > 1) && typeof phaser.headlessStep !== 'function') throw new Error('this Phaser has no headlessStep (3.60 or later has it)');
         const count = Math.max(1, Math.round((span as number) / state.frame));
         for (let i = 0; i < count; i += 1) {
           state.vt += state.frame;
+          state.n = (state.n ?? 0) + 1;
           (window as unknown as { __gamecheckAnim?: (step: number) => void }).__gamecheckAnim?.(state.frame);
-          game.step(state.perf0 + state.vt, state.frame);
+          const draw = !headless && (every === 1 || i === count - 1 || state.n % every === 0);
+          if (draw) phaser.step(state.perf0 + state.vt, state.frame);
+          else phaser.headlessStep?.(state.perf0 + state.vt, state.frame);
           await Promise.resolve();
           if (i % 300 === 299) await new Promise((resolve) => setTimeout(resolve, 0));
         }
-      }, [ref, ms, options.render === false]);
+      }, [ref, ms, options.render === false, every]);
     },
     async stop() {
       await page.evaluate((expression) => {

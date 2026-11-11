@@ -61,6 +61,7 @@ export interface ProgressOptions {
 export class Progress {
   private snapshot: ProgressSnapshot;
   private lastWrite = 0;
+  private pending: NodeJS.Timeout | undefined;
   private readonly file: string;
   private readonly keep: number;
   private readonly minIntervalMs: number;
@@ -119,7 +120,16 @@ export class Progress {
 
   private write(force: boolean): void {
     const now = Date.now();
-    if (!force && now - this.lastWrite < this.minIntervalMs) return;
+    if (!force && now - this.lastWrite < this.minIntervalMs) {
+      // Too soon: remember it, and write the latest state once the interval is up, so a step that starts in a quiet
+      // moment still reaches the file instead of being lost until the next change.
+      if (!this.pending) {
+        this.pending = setTimeout(() => { this.pending = undefined; this.write(true); }, this.minIntervalMs - (now - this.lastWrite) + 5);
+        this.pending.unref();
+      }
+      return;
+    }
+    if (this.pending) { clearTimeout(this.pending); this.pending = undefined; }
     this.lastWrite = now;
     this.snapshot.updatedAt = now;
     try {
@@ -131,9 +141,14 @@ export class Progress {
   }
 }
 
-/** The file a run reports to: an explicit one, else GAMECHECK_PROGRESS, else none (progress is opt-in). */
-export function progressFile(explicit?: string | boolean): string | undefined {
+/**
+ * The file a run reports to. An explicit path wins, then GAMECHECK_PROGRESS (the value "off" turns progress off for
+ * everything). With neither: none, unless the caller reports by default (the MCP server does) or `explicit` is true.
+ */
+export function progressFile(explicit?: string | boolean, options: { onByDefault?: boolean } = {}): string | undefined {
+  const env = process.env.GAMECHECK_PROGRESS;
+  if (env === 'off') return undefined;
   if (typeof explicit === 'string') return explicit;
-  if (process.env.GAMECHECK_PROGRESS) return process.env.GAMECHECK_PROGRESS;
-  return explicit === true ? DEFAULT_PROGRESS_FILE : undefined;
+  if (env) return env;
+  return explicit === true || options.onByDefault ? DEFAULT_PROGRESS_FILE : undefined;
 }

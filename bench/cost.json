@@ -1,0 +1,126 @@
+{
+ "seconds": 30,
+ "repeats": 2,
+ "rows": [
+  {
+   "label": "baseline: 1280x720, draw every frame",
+   "options": {},
+   "wall": 17.66,
+   "cpuSeconds": 276.3376445,
+   "peakMb": 551.65234375,
+   "ticks": 1801,
+   "runs": [
+    {
+     "wall": 17.674,
+     "cpuSeconds": 276.40325399999995,
+     "ticks": 1801,
+     "peakMb": 551.34765625
+    },
+    {
+     "wall": 17.646,
+     "cpuSeconds": 276.272035,
+     "ticks": 1802,
+     "peakMb": 551.65234375
+    }
+   ]
+  },
+  {
+   "label": "lean: 640x360, lighter Chrome, low priority",
+   "options": {
+    "lean": true
+   },
+   "wall": 17.7,
+   "cpuSeconds": 276.908405,
+   "peakMb": 552.18359375,
+   "ticks": 1801,
+   "runs": [
+    {
+     "wall": 17.455,
+     "cpuSeconds": 275.1210300000001,
+     "ticks": 1801,
+     "peakMb": 549.05078125
+    },
+    {
+     "wall": 17.945,
+     "cpuSeconds": 278.69577999999996,
+     "ticks": 1802,
+     "peakMb": 552.18359375
+    }
+   ]
+  },
+  {
+   "label": "lean + draw 1 frame in 4",
+   "options": {
+    "lean": true,
+    "drawEvery": 4
+   },
+   "wall": 3.7235,
+   "cpuSeconds": 57.049521,
+   "peakMb": 438.22265625,
+   "ticks": 1801,
+   "runs": [
+    {
+     "wall": 3.669,
+     "cpuSeconds": 56.608355,
+     "ticks": 1801,
+     "peakMb": 435.19140625
+    },
+    {
+     "wall": 3.778,
+     "cpuSeconds": 57.490687,
+     "ticks": 1802,
+     "peakMb": 438.22265625
+    }
+   ]
+  },
+  {
+   "label": "lean + no drawing",
+   "options": {
+    "lean": true,
+    "render": false
+   },
+   "wall": 0.12,
+   "cpuSeconds": 0.513857,
+   "peakMb": 304.44140625,
+   "ticks": 1802,
+   "runs": [
+    {
+     "wall": 0.113,
+     "cpuSeconds": 0.5346639999999999,
+     "ticks": 1802,
+     "peakMb": 304.44140625
+    },
+    {
+     "wall": 0.127,
+     "cpuSeconds": 0.49305,
+     "ticks": 1802,
+     "peakMb": 303.79296875
+    }
+   ]
+  },
+  {
+   "label": "1280x720 + no drawing",
+   "options": {
+    "render": false
+   },
+   "wall": 0.11699999999999999,
+   "cpuSeconds": 0.5408155000000001,
+   "peakMb": 307.2109375,
+   "ticks": 1802,
+   "runs": [
+    {
+     "wall": 0.113,
+     "cpuSeconds": 0.534399,
+     "ticks": 1802,
+     "peakMb": 307.2109375
+    },
+    {
+     "wall": 0.121,
+     "cpuSeconds": 0.5472320000000002,
+     "ticks": 1802,
+     "peakMb": 306.703125
+    }
+   ]
+  }
+ ]
+}

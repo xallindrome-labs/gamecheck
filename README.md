@@ -70,7 +70,7 @@ console.log(await game.evaluate('window.state'));
 await game.close();
 ```
 
-With the `phaser` engine, give it an expression for your `Phaser.Game`: `{ engine: 'phaser', gameRef: 'window.__GAME__' }`. Add `render: false` (CLI: `--no-render`) for the fastest steps.
+With the `phaser` engine, give it an expression for your `Phaser.Game`: `{ engine: 'phaser', gameRef: 'window.__GAME__' }`. Add `render: false` (CLI: `--no-render`) for the fastest steps. A Phaser game runs by itself in real time from the moment it is created until gamecheck takes over, so read values as a change over an advance (before and after) when you need them to repeat exactly; the `raf` engine's clock is virtual from the page's first line and has no such gap.
 
 ## For agents (MCP)
 
@@ -101,13 +101,40 @@ are given:
 window.__gamecheck = { state: () => ({ phase: 2, boss: { hp: 120, at: [40, 80] }, goals: ['reach the gate'] }) };
 ```
 
+## Cheaper runs
+
+Stepped time already removes the waiting. These options cut what the browser costs the machine.
+
+| Option | CLI | What it does |
+| --- | --- | --- |
+| `render: false` | `--no-render` | Phaser: step with `headlessStep`, which updates every scene and skips drawing. Anything that reads values the renderer computes (camera view, world-point conversion) goes stale. |
+| `drawEvery: N` | `--draw-every N` | Phaser: draw one frame in N, step the rest without drawing. The last frame of every advance is always drawn, so what you read afterwards is current. |
+| `lean: true` | `--lean` | A 640x360 window, a lighter Chrome (background networking, sync, extensions and component updates off), and low priority. |
+| `viewport` | `--viewport 800x450` | The window size. Overrides the lean size. |
+| `priority` | `--priority low\|normal\|high` | Chrome's priority class. `low` (below normal) is the lean default so the PC stays usable; a plain run stays at `normal`; `high` is only above normal. |
+| `memoryMb` | `--memory-mb 1500` | A ceiling on the total memory of every Chrome process (at least 256; Chrome alone starts near 300 MB), checked once a second. Past it the browser is killed and the run fails with "memory ceiling exceeded", instead of a runaway page eating the PC. A very fast runaway can overshoot for up to a second. |
+
+All of them are also arguments of the MCP tools (`gamecheck_run`, `gamecheck_compare`, `gamecheck_open`).
+
+Measured with `node bench/cost.mjs` (30 game seconds of a Phaser WebGL page with 2,500 sprites, software-rendered, two runs each, Windows):
+
+| | Wall time | Chrome CPU | Peak memory |
+| --- | --- | --- | --- |
+| Draw every frame (baseline) | 17.7 s | 276 s | 552 MB |
+| `--lean` | 17.7 s | 277 s | 552 MB |
+| `--lean --draw-every 4` | 3.7 s | 57 s | 438 MB |
+| `--lean --no-render` | 0.1 s | 0.5 s | 304 MB |
+
+Drawing is the cost: skipping it is about 150 times faster and uses about 500 times less CPU; drawing one frame in four is about 4.7 times faster. `--lean` on its own changed nothing in this test, because the page fixes its own canvas size, so shrinking the window does not change what is drawn. The smaller window only saves work for a game whose canvas follows the window. The lighter Chrome flags did not show up in a 30-second run either; they stop background work rather than frame work.
+
 ## Watching a run
 
 `gamecheck run a.json b.json c.json --progress` plays the scenarios one after another and rewrites a small JSON file as
-it goes (`.gamecheck/progress.json`, or `--progress-file <path>`, or the `GAMECHECK_PROGRESS` environment variable,
-which the MCP server's `gamecheck_run` honours too). The file holds the run's counts, the scenario in flight, its
+it goes (`.gamecheck/progress.json`, or `--progress-file <path>`, or the `GAMECHECK_PROGRESS` environment variable).
+The MCP server writes it by default, for runs, comparisons and interactive sessions, so an agent's work shows up in the
+panel; set `GAMECHECK_PROGRESS=off` to stop that. The file holds the run's counts, the scenario in flight, its
 current step and game time, the last results, and every failure. It is replaced whole and atomically, so anything can
-poll it: a terminal, a CI step, an editor panel. Progress is off unless asked for, and a failed write never stops a run.
+poll it: a terminal, a CI step, an editor panel. The CLI writes it only when asked for, and a failed write never stops a run.
 
 From code, `new Progress({ file, total })` is the writer, and it is a `ScenarioObserver` you can hand to `runScenario`.
 

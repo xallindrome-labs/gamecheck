@@ -166,6 +166,8 @@ export async function playScenario(session: Session, scenario: Scenario, observe
     }
   } catch (caught) {
     error = String((caught as Error).message ?? caught).split('\n')[0];
+    const over = session.memoryExceeded;
+    if (over) error = `memory ceiling exceeded: Chrome used ${over.usedMb} MB against a limit of ${over.limitMb} MB (${error})`;
   } finally {
     if (ticker) clearInterval(ticker);
   }
@@ -198,9 +200,9 @@ export interface Comparison {
 }
 
 /** Plays a scenario on the real clock and on the stepped one, and lists what differs: the verdicts and every observed value. */
-export async function compareClocks(scenario: Scenario, options: Partial<OpenOptions> = {}): Promise<Comparison> {
-  const real = await runScenario(scenario, { ...options, stepped: false });
-  const stepped = await runScenario(scenario, { ...options, stepped: true });
+export async function compareClocks(scenario: Scenario, options: Partial<OpenOptions> = {}, observer?: ScenarioObserver): Promise<Comparison> {
+  const real = await runScenario(scenario, { ...options, stepped: false }, observer);
+  const stepped = await runScenario(scenario, { ...options, stepped: true }, observer);
   const differences: string[] = [];
   if (real.ok !== stepped.ok) differences.push(`verdict: real ${real.ok ? 'pass' : 'fail'}, stepped ${stepped.ok ? 'pass' : 'fail'}`);
   if (real.error !== stepped.error) differences.push(`error: real ${real.error ?? 'none'}, stepped ${stepped.error ?? 'none'}`);

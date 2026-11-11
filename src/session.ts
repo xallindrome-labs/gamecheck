@@ -1,6 +1,8 @@
 import type { Browser, BrowserContext, Page } from 'playwright';
 import { FRAME_MS, createRealClock, createSteppedClock, installLoadTracker, installVirtualClock, type Clock, type Engine } from './clock.js';
+import { launchTuning, lowerPriority, type Tuning } from './lean.js';
 import { takeLock } from './lock.js';
+import { holdPriority, watchMemory, type MemoryExceeded } from './watchdog.js';
 
 const SWIFTSHADER_ARGS = ['--mute-audio', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--autoplay-policy=no-user-gesture-required'];
 const GPU_ARGS: Record<string, string[]> = {
@@ -8,7 +10,7 @@ const GPU_ARGS: Record<string, string[]> = {
   darwin: ['--mute-audio', '--ignore-gpu-blocklist', '--use-angle=metal', '--autoplay-policy=no-user-gesture-required'],
 };
 
-export interface OpenOptions {
+export interface OpenOptions extends Tuning {
   /** A page to load. Give one of url or html. */
   url?: string;
   html?: string;
@@ -27,6 +29,8 @@ export interface OpenOptions {
   frameMs?: number;
   /** Phaser engine: false steps without drawing (Phaser's headlessStep). See ClockOptions.render. */
   render?: boolean;
+  /** Phaser engine: draw one frame in N and step the rest without drawing. The last frame of every advance is always drawn. See ClockOptions.drawEvery. */
+  drawEvery?: number;
   /** Wait for pending loads (network, image and audio decode, Wasm, IndexedDB) after the page loads, in game time. Default true; free when nothing is pending. */
   settle?: boolean;
   /** Runs after the page has loaded and before the clock starts: load a library, boot the game. */
@@ -52,6 +56,8 @@ export interface Session {
   readonly clock: Clock;
   /** Game time advanced through this session so far (ms). */
   readonly gameMs: number;
+  /** Set when the memory ceiling (memoryMb) killed the browser. */
+  readonly memoryExceeded: MemoryExceeded | undefined;
   advance(ms: number): Promise<void>;
   /**
    * Advances game time until loads the page started have finished and stayed quiet for a few frames. Costs no game time
@@ -71,23 +77,29 @@ export async function openGame(options: OpenOptions): Promise<Session> {
   let browser: Browser | undefined;
   try {
     const { chromium } = await import('playwright');
-    const args = options.gpu ? GPU_ARGS[process.platform] ?? ['--mute-audio', '--ignore-gpu-blocklist'] : SWIFTSHADER_ARGS;
-    browser = await chromium.launch({ headless: !options.headed, args });
-    const context = await browser.newContext({ viewport: options.viewport ?? { width: 1280, height: 720 } });
+    const tuning = launchTuning(options);
+    const args = [...(options.gpu ? GPU_ARGS[process.platform] ?? ['--mute-audio', '--ignore-gpu-blocklist'] : SWIFTSHADER_ARGS), ...tuning.args];
+    const restorePriority = lowerPriority(tuning.priority);
+    try { browser = await chromium.launch({ headless: !options.headed, args }); } finally { restorePriority(); }
+    const context = await browser.newContext({ viewport: tuning.viewport });
     if (options.stepped) await installLoadTracker(context);
     if (options.stepped && options.engine === 'raf') await installVirtualClock(context);
     const page = await context.newPage();
+    const stopPriority = await holdPriority(browser, tuning.priority);
     if (options.url) await page.goto(options.url);
     else await page.setContent(options.html ?? '');
     await options.beforeStart?.(page);
-    const clock = options.stepped ? createSteppedClock(page, { engine: options.engine, gameRef: options.gameRef, frameMs: options.frameMs, render: options.render }) : createRealClock();
+    const clock = options.stepped ? createSteppedClock(page, { engine: options.engine, gameRef: options.gameRef, frameMs: options.frameMs, render: options.render, drawEvery: options.drawEvery }) : createRealClock();
     await clock.start();
     const opened = browser;
     let gameMs = 0;
+    let exceeded: MemoryExceeded | undefined;
+    const stopWatching = options.memoryMb ? watchMemory(opened, options.memoryMb, (found) => { exceeded = found; }) : () => {};
     const step = async (ms: number): Promise<void> => { await clock.advance(ms); gameMs += ms; };
     const session: Session = {
       page, context, browser: opened, clock,
       get gameMs() { return gameMs; },
+      get memoryExceeded() { return exceeded; },
       advance: step,
       async settle({ quietFrames = 3, timeoutMs = 5000 } = {}) {
         const began = Date.now();
@@ -120,6 +132,8 @@ export async function openGame(options: OpenOptions): Promise<Session> {
         }
       },
       async close() {
+        stopWatching();
+        stopPriority();
         await clock.stop().catch(() => {});
         await opened.close().catch(() => {});
         release();

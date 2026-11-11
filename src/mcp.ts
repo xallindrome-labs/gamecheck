@@ -8,11 +8,22 @@ import { Interactive } from './interactive.js';
 import { compareClocks, runScenario, type Scenario, type ScenarioRecord } from './scenario.js';
 
 const scenarioInput = z.union([z.string(), z.record(z.string(), z.unknown())]).describe('A scenario object, or the path of a scenario JSON file');
+const tuning = {
+  lean: z.boolean().optional().describe('Logic checks only: a 640x360 window, lighter Chrome and low priority, so the PC stays usable. The smaller window only saves work for games that size their canvas to it; render:false and drawEvery are the big savings. Leave off for anything judged by what is on screen'),
+  render: z.boolean().optional().describe('Phaser only: false skips drawing for the fastest steps; camera-view values and screenshots go stale'),
+  drawEvery: z.number().int().min(1).optional().describe('Phaser only: draw one frame in N and step the rest without drawing. The last frame of each advance is always drawn'),
+  priority: z.enum(['low', 'normal', 'high']).optional().describe('Chrome priority. low is the lean default; high is only above normal'),
+  memoryMb: z.number().int().min(256).optional().describe("Ceiling on Chrome's total memory, checked once a second; past it the browser is killed and the run fails saying so"),
+  viewport: z.object({ width: z.number().int().positive(), height: z.number().int().positive() }).optional().describe('Canvas size; the default is 1280x720, or 640x360 with lean'),
+};
 const shared = {
   scenario: scenarioInput,
   url: z.string().optional().describe("The page to test; overrides the scenario's own"),
   gpu: z.boolean().optional().describe('Draw on the real GPU: faster for logic checks, not for pixels'),
+  ...tuning,
 };
+const tuned = ({ gpu, lean, render, drawEvery, priority, memoryMb, viewport }: { gpu?: boolean; lean?: boolean; render?: boolean; drawEvery?: number; priority?: 'low' | 'normal' | 'high'; memoryMb?: number; viewport?: { width: number; height: number } }) => ({ gpu, lean, render, drawEvery, priority, memoryMb, viewport });
+const cleanly = <T extends object>(options: T): T => Object.fromEntries(Object.entries(options).filter(([, value]) => value !== undefined)) as T;
 
 function load(input: string | Record<string, unknown>, url?: string): Scenario {
   const scenario = (typeof input === 'string' ? JSON.parse(readFileSync(input, 'utf8')) : input) as Scenario;
@@ -30,13 +41,13 @@ const server = new McpServer({ name: 'gamecheck', version: '0.1.0' });
 server.registerTool('gamecheck_run', {
   description: 'Plays a game-check scenario in a headless browser, stepping the game by hand (fast and deterministic) unless real is set. Returns a short verdict and what failed.',
   inputSchema: { ...shared, real: z.boolean().optional().describe('Use the real clock instead of stepping the game') },
-}, async ({ scenario, url, gpu, real }) => {
+}, async ({ scenario, url, real, ...rest }) => {
   const loaded = load(scenario, url);
-  const target = progressFile();
-  const progress = target ? new Progress({ file: target, total: 1, label: 'gamecheck_run' }) : undefined;
+  const target = progressFile(undefined, { onByDefault: true });
+  const progress = target ? new Progress({ file: target, total: 1, label: `gamecheck_run${rest.lean ? ' (lean)' : ''}` }) : undefined;
   progress?.begin(loaded);
   try {
-    const record = await runScenario(loaded, { gpu, stepped: !real }, progress);
+    const record = await runScenario(loaded, { ...cleanly(tuned(rest)), stepped: !real }, progress);
     progress?.end({ id: record.id, ok: record.ok, ms: record.ms, why: record.error ?? record.observations.find((one) => !one.ok)?.why });
     return { content: [{ type: 'text' as const, text: summary(record) }], isError: !record.ok };
   } finally {
@@ -47,8 +58,18 @@ server.registerTool('gamecheck_run', {
 server.registerTool('gamecheck_compare', {
   description: 'Plays a scenario on the real clock and on the stepped one and lists every verdict or observed value that differs. Run it before trusting stepped results for a scenario.',
   inputSchema: shared,
-}, async ({ scenario, url, gpu }) => {
-  const result = await compareClocks(load(scenario, url), { gpu });
+}, async ({ scenario, url, ...rest }) => {
+  const loaded = load(scenario, url);
+  const target = progressFile(undefined, { onByDefault: true });
+  const progress = target ? new Progress({ file: target, total: 1, label: 'gamecheck_compare (real clock, then stepped)' }) : undefined;
+  progress?.begin(loaded);
+  let result;
+  try {
+    result = await compareClocks(loaded, cleanly(tuned(rest)), progress);
+    progress?.end({ id: result.id, ok: result.equivalent, ms: result.real.ms + result.stepped.ms, why: result.differences[0] });
+  } finally {
+    progress?.finish();
+  }
   const text = `${result.equivalent ? 'EQUIVALENT' : 'DIFFERENT'} ${result.id}: real ${result.real.ok ? 'pass' : 'fail'} ${(result.real.ms / 1000).toFixed(1)} s, stepped ${result.stepped.ok ? 'pass' : 'fail'} ${(result.stepped.ms / 1000).toFixed(1)} s${result.differences.length ? `\n  ${result.differences.join('\n  ')}` : ''}`;
   return { content: [{ type: 'text' as const, text }], isError: !result.equivalent };
 });
@@ -64,9 +85,9 @@ server.registerTool('gamecheck_open', {
     engine: z.enum(['raf', 'phaser']).default('raf'), gameRef: z.string().optional(),
     gpu: z.boolean().optional().describe('Faster rendering for logic checks; leave off for anything judged by pixels'),
     real: z.boolean().optional().describe('Run on the real clock instead of stepping'),
-    render: z.boolean().optional().describe('Phaser only: false skips drawing for the fastest steps; camera-view values and screenshots go stale'),
+    ...tuning,
   },
-}, async ({ url, html, engine, gameRef, gpu, real, render }) => json(await game.open({ url, html, engine, gameRef, gpu, render, stepped: !real })));
+}, async ({ url, html, engine, gameRef, real, ...rest }) => json(await game.open({ url, html, engine, gameRef, ...cleanly(tuned(rest)), stepped: !real })));
 
 server.registerTool('gamecheck_step', {
   description: 'Advances game time and returns what happened. Give ms or frames, or until (an expression to wait for, with maxMs). inputs presses keys on the game clock: [{ key, atMs, holdMs }] with offsets from the start of the step. report is named expressions read before and after, and the result lists which changed, so you can check an input did something without a second call. Caps: 600000 ms per call and a wall-time budget; wallBudgetExceeded says it stopped early.',

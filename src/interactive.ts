@@ -1,5 +1,6 @@
 import { FRAME_MS } from './clock.js';
 import { capBytes, planInputs, roundFloats, summarizeWatch, type Sample, type TimedInput, type WatchSummary } from './state.js';
+import { Progress, progressFile } from './progress.js';
 import { openGame, type OpenOptions, type Session } from './session.js';
 
 /** The most game time one call may advance, and the wall time one call may spend before it stops and says so. */
@@ -55,6 +56,9 @@ export class Interactive {
   private gameMs = 0;
   private idleTimer: NodeJS.Timeout | undefined;
   private chain: Promise<unknown> = Promise.resolve();
+  private progress: Progress | undefined;
+  private opened = 0;
+  private calls = 0;
 
   constructor(private readonly idleMs = Number(process.env.GAMECHECK_IDLE_MS ?? 600_000)) {}
 
@@ -75,9 +79,14 @@ export class Interactive {
     this.idleTimer.unref();
   }
 
-  private need(): Session {
+  private need(label?: string): Session {
     if (!this.session) throw new Error('no game is open: call open first (it may have been closed after sitting idle)');
     this.touch();
+    if (label && this.progress) {
+      this.calls += 1;
+      this.progress.step(this.calls, 0, label);
+      this.progress.tick(this.session.gameMs);
+    }
     return this.session;
   }
 
@@ -87,6 +96,14 @@ export class Interactive {
       this.session = await openGame({ lockTimeoutMs: 20_000, ...options, stepped: options.stepped ?? true });
       this.gameMs = 0;
       this.touch();
+      const file = progressFile(undefined, { onByDefault: true });
+      if (file) {
+        this.progress = new Progress({ file, total: 0, label: `gamecheck interactive (${this.session.clock.stepped ? 'stepped' : 'real clock'})` });
+        this.progress.begin({ id: options.url ?? 'html page', steps: [] });
+        this.opened = Date.now();
+        this.calls = 0;
+        this.progress.step(0, 0, 'open');
+      }
       return { engine: options.engine, clock: this.session.clock.stepped ? 'stepped' : 'real', idleCloseMs: this.idleMs };
     });
   }
@@ -99,7 +116,7 @@ export class Interactive {
 
   step(options: StepOptions): Promise<StepResult> {
     return this.run(async () => {
-      const session = this.need();
+      const session = this.need(options.until ? `step until ${options.until}`.slice(0, 48) : `step ${options.ms !== undefined ? `${options.ms} ms` : `${options.frames ?? 0} frames`}`);
       if (options.until && (options.ms !== undefined || options.frames !== undefined || options.inputs)) throw new Error('until cannot be combined with ms, frames or inputs');
       const started = Date.now();
       const budget = options.wallBudgetMs ?? DEFAULT_WALL_BUDGET_MS;
@@ -156,7 +173,7 @@ export class Interactive {
 
   state(options: StateOptions = {}): Promise<{ state: unknown; truncated: boolean; dropped: number }> {
     return this.run(async () => {
-      const session = this.need();
+      const session = this.need('read state');
       let raw: unknown;
       if (options.exprs) raw = await this.read(session, options.exprs);
       else {
@@ -171,7 +188,7 @@ export class Interactive {
 
   watch(options: WatchOptions): Promise<WatchSummary & { samples: number }> {
     return this.run(async () => {
-      const session = this.need();
+      const session = this.need('watch');
       const interval = Math.max(FRAME_MS, 1000 / Math.min(60, Math.max(1, options.hz ?? 10)));
       const total = Math.min(options.ms, MAX_STEP_MS);
       const series: Record<string, Sample[]> = Object.fromEntries(Object.keys(options.exprs).map((name) => [name, []]));
@@ -223,7 +240,11 @@ export class Interactive {
       const session = this.session;
       this.session = undefined;
       if (!session) return { closed: false };
+      this.progress?.tick(session.gameMs);
       await session.close();
+      this.progress?.end({ id: 'interactive', ok: true, ms: Date.now() - this.opened });
+      this.progress?.finish();
+      this.progress = undefined;
       return { closed: true };
     });
   }

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { readFileSync } from 'node:fs';
 import { compareClocks, runScenario, type Scenario } from './scenario.js';
+import type { Priority } from './lean.js';
 import { Progress, progressFile } from './progress.js';
 import type { Engine } from './clock.js';
 
@@ -13,13 +14,19 @@ gamecheck compare <scenario.json> [options]   play it on the real clock and the 
   --real                run: use the real clock
   --gpu                 draw on the real GPU (faster; software rendering stays the pixel reference)
   --no-render           phaser only: step with headlessStep, which skips drawing (fastest; camera-view values go stale)
+  --draw-every <n>      phaser only: draw one frame in n, step the rest without drawing (the last frame of each advance is drawn)
+  --lean                logic checks only: 640x360 window, lighter Chrome, low priority (each part below overrides it). The window size only
+                        saves work for games that size their canvas to it; --no-render and --draw-every are where the big savings are
+  --viewport <WxH>      canvas size, such as 640x360 (default 1280x720)
+  --priority <p>        low | normal | high: Chrome's priority (low is the lean default; high is only above normal)
+  --memory-mb <n>       ceiling on Chrome's total memory (at least 256); past it the browser is killed and the run fails saying so
   --headed              show the browser
   --terse               one summary line
   --json                full JSON result
   --progress            write live progress to .gamecheck/progress.json (or $GAMECHECK_PROGRESS) for a panel to show
   --progress-file <f>   write live progress to this file instead`;
 
-const FLAGS = new Set(['real', 'gpu', 'noRender', 'headed', 'terse', 'json', 'help', 'progress']);
+const FLAGS = new Set(['real', 'gpu', 'noRender', 'headed', 'terse', 'json', 'help', 'progress', 'lean']);
 
 function parse(argv: string[]): { pos: string[]; opt: Record<string, string | true> } {
   const pos: string[] = [];
@@ -48,7 +55,17 @@ async function main(): Promise<number> {
   const { pos, opt } = parse(process.argv.slice(2));
   const [command, ...files] = pos;
   if (!command || files.length === 0 || opt.help) { console.log(USAGE); return command ? 0 : 1; }
-  const shared = { gpu: Boolean(opt.gpu), headed: Boolean(opt.headed) };
+  const size = typeof opt.viewport === 'string' ? /^(\d+)x(\d+)$/.exec(opt.viewport) : null;
+  if (typeof opt.viewport === 'string' && !size) throw new Error('--viewport wants WIDTHxHEIGHT, such as 640x360');
+  if (typeof opt.priority === 'string' && !['low', 'normal', 'high'].includes(opt.priority)) throw new Error('--priority wants low, normal or high');
+  const shared = {
+    gpu: Boolean(opt.gpu), headed: Boolean(opt.headed), ...(opt.lean ? { lean: true } : {}),
+    ...(size ? { viewport: { width: Number(size[1]), height: Number(size[2]) } } : {}),
+    ...(typeof opt.drawEvery === 'string' ? { drawEvery: Number(opt.drawEvery) } : {}),
+    ...(typeof opt.priority === 'string' ? { priority: opt.priority as Priority } : {}),
+    ...(typeof opt.memoryMb === 'string' ? { memoryMb: Number(opt.memoryMb) } : {}),
+  };
+  const how = [opt.real ? 'real clock' : 'stepped', opt.lean ? 'lean' : '', typeof opt.drawEvery === 'string' ? `draw 1 in ${opt.drawEvery}` : '', opt.noRender ? 'no drawing' : '', opt.gpu ? 'gpu' : ''].filter(Boolean).join(', ');
   if (command === 'compare') {
     const result = await compareClocks(load(files[0] ?? '', opt), shared);
     if (opt.json) console.log(JSON.stringify(result, null, 1));
@@ -57,7 +74,7 @@ async function main(): Promise<number> {
   }
   if (command === 'run') {
     const target = progressFile(typeof opt.progressFile === 'string' ? opt.progressFile : opt.progress);
-    const progress = target ? new Progress({ file: target, total: files.length, label: `gamecheck run${opt.real ? ' (real clock)' : ''}` }) : undefined;
+    const progress = target ? new Progress({ file: target, total: files.length, label: `gamecheck run (${how})` }) : undefined;
     let allOk = true;
     try {
       for (const file of files) {

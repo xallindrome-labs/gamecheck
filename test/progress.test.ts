@@ -90,6 +90,10 @@ test('progress: file choice is opt-in, explicit first, then the environment', ()
     process.env.GAMECHECK_PROGRESS = 'env.json';
     assert.equal(progressFile(undefined), 'env.json');
     assert.equal(progressFile('mine.json'), 'mine.json');
+    delete process.env.GAMECHECK_PROGRESS;
+    assert.equal(progressFile(undefined, { onByDefault: true }), '.gamecheck/progress.json', 'a caller that reports by default');
+    process.env.GAMECHECK_PROGRESS = 'off';
+    assert.equal(progressFile('mine.json', { onByDefault: true }), undefined, 'off beats everything');
   } finally {
     if (saved === undefined) delete process.env.GAMECHECK_PROGRESS;
     else process.env.GAMECHECK_PROGRESS = saved;
@@ -103,4 +107,20 @@ test('describeStep: every step kind has a short label', () => {
   assert.ok(describeStep({ do: 'waitFor', expr: 'a'.repeat(200) }).length < 70);
   assert.match(describeStep({ do: 'measure', until: 'boss.dead', as: 'fight' }), /measure fight/);
   assert.match(describeStep({ do: 'soak', ms: 30000, invariant: 'ok', as: 'soak' }), /30000 ms/);
+});
+
+test('progress: a write that was too soon still reaches the file once the interval is up', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'gamecheck-progress-'));
+  const file = join(dir, 'progress.json');
+  try {
+    const progress = new Progress({ file, total: 1, minIntervalMs: 80 });
+    progress.begin({ id: 'a', steps: [1, 2, 3] });
+    progress.step(2, 3, 'press Space');
+    assert.notEqual(read(file).current?.step, 'press Space', 'written too soon: held back');
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    assert.equal(read(file).current?.step, 'press Space', 'the trailing write put the latest step in the file');
+    progress.finish();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

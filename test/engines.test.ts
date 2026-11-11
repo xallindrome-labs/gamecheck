@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { openGame } from '../src/index.js';
 import { serve } from './fixtures.js';
 
-const PIXI_PAGE = `<script src="/node_modules/pixi.js/dist/pixi.min.js"></script><script>
+const PIXI_PAGE = `<body></body><script src="/node_modules/pixi.js/dist/pixi.min.js"></script><script>
 (async () => {
   const app = new PIXI.Application();
   await app.init({ width: 320, height: 200 });
