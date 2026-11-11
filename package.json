@@ -1,6 +1,6 @@
 {
   "name": "@xallindrome-labs/gamecheck",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Run browser games faster in headless tests and agent sessions: drive game time yourself instead of waiting on the clock.",
   "type": "module",
   "license": "MIT",
