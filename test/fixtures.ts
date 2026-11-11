@@ -23,9 +23,11 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const TYPES: Record<string, string> = { '.js': 'text/javascript', '.mjs': 'text/javascript', '.html': 'text/html' };
 
 /** Serves the given pages, and files under node_modules, on a free local port. */
-export async function serve(pages: Record<string, string>): Promise<{ url: string; close(): Promise<void> }> {
+export async function serve(pages: Record<string, string>, slow: Record<string, number> = {}): Promise<{ url: string; close(): Promise<void> }> {
   const server: Server = createServer((request, response) => {
     const path = (request.url ?? '/').split('?')[0] ?? '/';
+    const delay = slow[path];
+    if (delay !== undefined) { setTimeout(() => { response.setHeader('content-type', 'text/plain'); response.end('late'); }, delay); return; }
     const page = pages[path];
     if (page !== undefined) {
       response.setHeader('content-type', 'text/html');
@@ -46,5 +48,5 @@ export async function serve(pages: Record<string, string>): Promise<{ url: strin
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const address = server.address();
   const port = typeof address === 'object' && address ? address.port : 0;
-  return { url: `http://127.0.0.1:${port}`, close: () => new Promise((resolve) => server.close(() => resolve())) };
+  return { url: `http://127.0.0.1:${port}`, close: () => new Promise((resolve) => { server.close(() => resolve()); server.closeAllConnections(); }) };
 }

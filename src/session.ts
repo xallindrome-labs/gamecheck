@@ -1,5 +1,5 @@
 import type { Browser, BrowserContext, Page } from 'playwright';
-import { createRealClock, createSteppedClock, installVirtualClock, type Clock, type Engine } from './clock.js';
+import { FRAME_MS, createRealClock, createSteppedClock, installLoadTracker, installVirtualClock, type Clock, type Engine } from './clock.js';
 import { takeLock } from './lock.js';
 
 const SWIFTSHADER_ARGS = ['--mute-audio', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--autoplay-policy=no-user-gesture-required'];
@@ -27,8 +27,17 @@ export interface OpenOptions {
   frameMs?: number;
   /** Phaser engine: false steps without drawing (Phaser's headlessStep). See ClockOptions.render. */
   render?: boolean;
+  /** Wait for pending loads (network, image and audio decode, Wasm, IndexedDB) after the page loads, in game time. Default true; free when nothing is pending. */
+  settle?: boolean;
   /** Runs after the page has loaded and before the clock starts: load a library, boot the game. */
   beforeStart?: (page: Page) => Promise<void>;
+}
+
+export interface SettleOptions {
+  /** Frames in a row with no pending work that count as settled (default 3). */
+  quietFrames?: number;
+  /** Real time to wait before giving up on work that never finishes (default 5000). */
+  timeoutMs?: number;
 }
 
 export interface UntilOptions {
@@ -42,6 +51,11 @@ export interface Session {
   readonly browser: Browser;
   readonly clock: Clock;
   advance(ms: number): Promise<void>;
+  /**
+   * Advances game time until loads the page started have finished and stayed quiet for a few frames. Costs no game time
+   * when nothing is pending. Work that never finishes is abandoned after timeoutMs of real time (abandoned: true).
+   */
+  settle(options?: SettleOptions): Promise<{ advancedMs: number; abandoned: boolean }>;
   press(key: string, holdMs?: number): Promise<void>;
   evaluate<T = unknown>(expression: string): Promise<T>;
   /** Advances in steps of pollMs until the expression is truthy; the timeout counts the time advanced. */
@@ -58,6 +72,7 @@ export async function openGame(options: OpenOptions): Promise<Session> {
     const args = options.gpu ? GPU_ARGS[process.platform] ?? ['--mute-audio', '--ignore-gpu-blocklist'] : SWIFTSHADER_ARGS;
     browser = await chromium.launch({ headless: !options.headed, args });
     const context = await browser.newContext({ viewport: options.viewport ?? { width: 1280, height: 720 } });
+    if (options.stepped) await installLoadTracker(context);
     if (options.stepped && options.engine === 'raf') await installVirtualClock(context);
     const page = await context.newPage();
     if (options.url) await page.goto(options.url);
@@ -69,6 +84,20 @@ export async function openGame(options: OpenOptions): Promise<Session> {
     const session: Session = {
       page, context, browser: opened, clock,
       advance: (ms) => clock.advance(ms),
+      async settle({ quietFrames = 3, timeoutMs = 5000 } = {}) {
+        const began = Date.now();
+        let advancedMs = 0;
+        let quiet = 0;
+        for (;;) {
+          const pending = await page.evaluate(() => (window as unknown as { __gamecheckPending?: () => number }).__gamecheckPending?.() ?? 0);
+          if (pending === 0 && (advancedMs === 0 || (quiet += 1) >= quietFrames)) return { advancedMs, abandoned: false };
+          if (pending > 0) quiet = 0;
+          if (Date.now() - began > timeoutMs) return { advancedMs, abandoned: true };
+          await clock.advance(FRAME_MS);
+          advancedMs += FRAME_MS;
+          await new Promise((resolve) => setTimeout(resolve, 2));
+        }
+      },
       async press(key, holdMs = 80) {
         await page.keyboard.down(key);
         await clock.advance(holdMs);
@@ -91,6 +120,7 @@ export async function openGame(options: OpenOptions): Promise<Session> {
         release();
       },
     };
+    if (options.stepped && options.settle !== false) await session.settle();
     return session;
   } catch (error) {
     await browser?.close().catch(() => {});

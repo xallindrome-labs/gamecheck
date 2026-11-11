@@ -85,6 +85,7 @@ function pageClock(): void {
     stop(): void {
       if (!state.virtual) return;
       state.virtual = false;
+      (window as unknown as { __gamecheckAnimRelease?: () => void }).__gamecheckAnimRelease?.();
       for (const callback of frames.values()) real.raf(callback);
       frames.clear();
       for (const timer of timers.values()) real.setTimeout(timer.fn, Math.max(0, timer.at - state.vt));
@@ -104,6 +105,7 @@ function pageClock(): void {
           else timers.delete(nextId);
           due.fn();
         }
+        (window as unknown as { __gamecheckAnim?: (step: number) => void }).__gamecheckAnim?.(frame);
         const now = state.perf0 + state.vt;
         const pending = [...frames.values()];
         frames.clear();
@@ -113,6 +115,83 @@ function pageClock(): void {
     },
   };
   (window as unknown as { __gamecheckClock: typeof api }).__gamecheckClock = api;
+}
+
+/**
+ * Runs in the page before any of its scripts, for every stepped session. It counts work the clock cannot speed up
+ * (network, image decode, Wasm, audio decode, IndexedDB opens) so `settle` can wait for it, and it holds CSS and Web
+ * Animations so they follow game time instead of the real clock.
+ */
+function pageTracker(): void {
+  const w = window as unknown as Record<string, unknown>;
+  let pending = 0;
+  const done = (): void => { pending -= 1; };
+  const track = <T>(promise: Promise<T>): Promise<T> => {
+    pending += 1;
+    promise.then(done, done);
+    return promise;
+  };
+  const originalFetch = window.fetch.bind(window);
+  window.fetch = ((...args: Parameters<typeof fetch>) => track(originalFetch(...args))) as typeof fetch;
+  const send = XMLHttpRequest.prototype.send;
+  XMLHttpRequest.prototype.send = function (this: XMLHttpRequest, ...args: Parameters<XMLHttpRequest['send']>) {
+    pending += 1;
+    this.addEventListener('loadend', done, { once: true });
+    return send.apply(this, args);
+  };
+  const src = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, 'src');
+  if (src?.get && src.set) {
+    const set = src.set;
+    Object.defineProperty(HTMLImageElement.prototype, 'src', {
+      ...src,
+      set(this: HTMLImageElement, value: string) {
+        set.call(this, value);
+        if (this.complete) return;
+        pending += 1;
+        this.addEventListener('load', done, { once: true });
+        this.addEventListener('error', done, { once: true });
+      },
+    });
+  }
+  const decode = HTMLImageElement.prototype.decode;
+  HTMLImageElement.prototype.decode = function (this: HTMLImageElement) { return track(decode.call(this)); };
+  const wasm = WebAssembly as unknown as Record<string, ((...args: unknown[]) => Promise<unknown>) | undefined>;
+  for (const name of ['instantiate', 'compile', 'instantiateStreaming', 'compileStreaming']) {
+    const original = wasm[name];
+    if (original) wasm[name] = (...args: unknown[]) => track(original.apply(WebAssembly, args));
+  }
+  const decodeAudio = BaseAudioContext.prototype.decodeAudioData;
+  BaseAudioContext.prototype.decodeAudioData = function (this: BaseAudioContext, data: ArrayBuffer, ok?: DecodeSuccessCallback | null, fail?: DecodeErrorCallback | null) {
+    pending += 1;
+    const promise = decodeAudio.call(this, data, (buffer) => { done(); ok?.(buffer); }, (error) => { done(); fail?.(error); });
+    promise.catch(() => {});
+    return promise;
+  };
+  const open = IDBFactory.prototype.open;
+  IDBFactory.prototype.open = function (this: IDBFactory, ...args: Parameters<IDBFactory['open']>) {
+    const request = open.apply(this, args);
+    pending += 1;
+    request.addEventListener('success', done, { once: true });
+    request.addEventListener('error', done, { once: true });
+    return request;
+  };
+  const held = new Set<Animation>();
+  w.__gamecheckPending = (): number => pending;
+  w.__gamecheckAnim = (frame: number): void => {
+    for (const animation of document.getAnimations()) {
+      if (animation.playState === 'running') { held.add(animation); animation.pause(); }
+      if (held.has(animation) && animation.playState === 'paused') animation.currentTime = Number(animation.currentTime ?? 0) + frame;
+    }
+  };
+  w.__gamecheckAnimRelease = (): void => {
+    for (const animation of held) if (animation.playState === 'paused') animation.play();
+    held.clear();
+  };
+}
+
+/** For every stepped session: lets `settle` see pending loads, and keeps CSS animations on game time. */
+export async function installLoadTracker(context: BrowserContext): Promise<void> {
+  await context.addInitScript(pageTracker);
 }
 
 /**
@@ -174,6 +253,7 @@ export function createSteppedClock(page: Page, options: ClockOptions): Clock {
         const count = Math.max(1, Math.round((span as number) / state.frame));
         for (let i = 0; i < count; i += 1) {
           state.vt += state.frame;
+          (window as unknown as { __gamecheckAnim?: (step: number) => void }).__gamecheckAnim?.(state.frame);
           game.step(state.perf0 + state.vt, state.frame);
           await Promise.resolve();
           if (i % 300 === 299) await new Promise((resolve) => setTimeout(resolve, 0));
@@ -188,6 +268,7 @@ export function createSteppedClock(page: Page, options: ClockOptions): Clock {
         performance.now = state.perf;
         Date.now = state.date;
         holder.__gamecheckStep = null;
+        (window as unknown as { __gamecheckAnimRelease?: () => void }).__gamecheckAnimRelease?.();
         ((0, eval)(expression as string) as { loop: { wake(): void } }).loop.wake();
       }, ref);
     },
