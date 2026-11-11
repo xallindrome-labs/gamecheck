@@ -29,7 +29,7 @@ export class Progress {
     }
     /** A scenario is about to open: shows as "opening" until its first step. */
     begin(scenario) {
-        this.snapshot.current = { id: scenario.id, proves: scenario.proves, phase: 'opening', startedAt: Date.now(), stepIndex: 0, stepCount: scenario.steps.length, step: 'opening the page', gameMs: 0 };
+        this.snapshot.current = { id: scenario.id, proves: scenario.proves, phase: 'opening', startedAt: Date.now(), stepIndex: 0, stepCount: scenario.steps?.length ?? 0, step: 'opening the page', gameMs: 0 };
         this.write(true);
     }
     /** The observer half: playScenario calls these. */

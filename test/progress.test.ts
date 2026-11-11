@@ -24,7 +24,8 @@ test('progress: a run is visible from the first write to the last', () => {
     assert.deepEqual([mid?.phase, mid?.stepIndex, mid?.step, mid?.gameMs], ['running', 2, 'advance 500 ms', 1235]);
 
     progress.end({ id: 'first', ok: true, ms: 40 });
-    progress.begin({ id: 'second', steps: [1] });
+    progress.begin({ id: 'second' });
+    assert.equal(read(file).current?.stepCount, 0, 'a scenario with no steps (a unit test run as one) opens with none');
     progress.end({ id: 'second', ok: false, ms: 70, why: 'boss never died' });
     progress.finish();
 
