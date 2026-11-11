@@ -150,6 +150,15 @@ or from a shell: `claude plugin install gamecheck-progress --marketplace xallind
 `--progress` from the folder Claude Code is open in (or point the mod's "Progress file" setting at the file), and type
 `/gamecheck` if the pane does not open by itself.
 
+## Using the pieces in your own harness
+
+If you already have a Playwright harness, you do not need the rest of gamecheck to get the cheaper-run and panel pieces.
+`integrations/` has three dependency-free files to copy (a test keeps them identical to the sources):
+
+- `progress.mjs`: the progress-file writer the Claude Code panel reads (`new Progress({ file, total })`, then `begin`, `step`, `tick`, `end`, `finish`).
+- `lean.mjs`: the lean Chrome flags, the small window size, and `launchTuning` to combine them with a priority and memory ceiling.
+- `watchdog.mjs` (needs `lean.mjs` beside it): `holdPriority(browser, 'low')` keeps every Chrome process at that priority, and `watchMemory(browser, limitMb, onExceeded)` kills Chrome past a ceiling. Both take a Playwright `Browser`.
+
 ## Honest limits
 
 - It drives game time, not the browser's. Anything that waits on real I/O (network, image decode) still takes real time;

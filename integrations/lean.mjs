@@ -1,5 +1,5 @@
 // Standalone copy of gamecheck's src/lean.ts, compiled, with no dependencies beyond Node.
-// The lean launch options: a smaller canvas, lighter Chrome, low priority, a memory ceiling.
+// The lean launch options: a smaller canvas, lighter Chrome, low priority.
 // Copy it into your own harness. test/integrations.test.ts fails if it drifts from the source.
 import os from 'node:os';
 /** A quarter of the pixels of the 1280x720 default: draw cost, in software, grows with the area. */
