@@ -1,0 +1,22 @@
+{
+  "id": "example.capture",
+  "proves": "A moving dot and three generated Web Audio notes, on the game clock.",
+  "engine": "raf",
+  "html": "<style>html,body{margin:0;overflow:hidden;background:#142238}canvas{display:block;width:100vw;height:100vh}</style><canvas></canvas><script>\nconst canvas = document.querySelector('canvas');\ncanvas.width = Math.round(innerWidth * devicePixelRatio);\ncanvas.height = Math.round(innerHeight * devicePixelRatio);\nconst ctx = canvas.getContext('2d');\nconst audio = new AudioContext();\nconst note = audio.createBuffer(1, 4800, 48000);\nconst samples = note.getChannelData(0);\nfor (let i = 0; i < samples.length; i++) samples[i] = Math.sin(i / 48000 * 2 * Math.PI * 440) * 0.4 * (1 - i / samples.length);\nwindow.startShot = () => {\n  for (const ms of [500, 1000, 1500]) setTimeout(() => {\n    const sound = audio.createBufferSource();\n    sound.buffer = note;\n    sound.connect(audio.destination);\n    sound.start();\n  }, ms);\n};\nlet tick = 0;\nfunction frame() {\n  tick++;\n  const w = canvas.width, h = canvas.height;\n  ctx.fillStyle = '#142238'; ctx.fillRect(0, 0, w, h);\n  ctx.fillStyle = '#6ee7b7'; ctx.beginPath();\n  ctx.arc(w * (0.2 + 0.6 * (tick % 120) / 120), h / 2, h / 12, 0, Math.PI * 2); ctx.fill();\n  requestAnimationFrame(frame);\n}\nrequestAnimationFrame(frame);\n</script>",
+  "capture": {
+    "fps": 30,
+    "viewport": "320x180",
+    "scale": 1
+  },
+  "steps": [
+    {
+      "do": "eval",
+      "expr": "window.startShot()"
+    },
+    {
+      "do": "advance",
+      "ms": 2000
+    }
+  ],
+  "expect": []
+}

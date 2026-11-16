@@ -22,6 +22,7 @@ export interface OpenOptions extends Tuning {
   gpu?: boolean;
   headed?: boolean;
   viewport?: { width: number; height: number };
+  deviceScaleFactor?: number;
   /** Hold the one-headless-run-at-a-time lock (default true). */
   lock?: boolean;
   /** Give up waiting for the lock after this long, with an error that names the holder. */
@@ -35,6 +36,8 @@ export interface OpenOptions extends Tuning {
   settle?: boolean;
   /** Runs after the page has loaded and before the clock starts: load a library, boot the game. */
   beforeStart?: (page: Page) => Promise<void>;
+  /** Installs page hooks before navigation or inline scripts run. */
+  beforeLoad?: (context: BrowserContext) => Promise<void>;
 }
 
 export interface SettleOptions {
@@ -81,9 +84,10 @@ export async function openGame(options: OpenOptions): Promise<Session> {
     const args = [...(options.gpu ? GPU_ARGS[process.platform] ?? ['--mute-audio', '--ignore-gpu-blocklist'] : SWIFTSHADER_ARGS), ...tuning.args];
     const restorePriority = lowerPriority(tuning.priority);
     try { browser = await chromium.launch({ headless: !options.headed, args }); } finally { restorePriority(); }
-    const context = await browser.newContext({ viewport: tuning.viewport });
+    const context = await browser.newContext({ viewport: tuning.viewport, deviceScaleFactor: options.deviceScaleFactor });
     if (options.stepped) await installLoadTracker(context);
     if (options.stepped && options.engine === 'raf') await installVirtualClock(context);
+    await options.beforeLoad?.(context);
     const page = await context.newPage();
     const stopPriority = await holdPriority(browser, tuning.priority);
     if (options.url) await page.goto(options.url);
