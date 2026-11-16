@@ -4,9 +4,11 @@ import { compareClocks, runScenario, type Scenario } from './scenario.js';
 import type { Priority } from './lean.js';
 import { Progress, progressFile } from './progress.js';
 import type { Engine } from './clock.js';
+import { captureScenario, type CaptureShot } from './capture.js';
 
 const USAGE = `gamecheck run <scenario.json...> [options]    play one or more scenarios, stepped by default
 gamecheck compare <scenario.json> [options]   play it on the real clock and the stepped one, and diff the results
+gamecheck capture <shot.json> [--out DIR] [--fps N] [--mux] [--gpu] [--terse]
 
   --url <page>          the page to test (overrides the scenario's)
   --engine raf|phaser   how to drive time (raf: any engine; phaser: steps Phaser.Game directly)
@@ -26,7 +28,7 @@ gamecheck compare <scenario.json> [options]   play it on the real clock and the 
   --progress            write live progress to .gamecheck/progress.json (or $GAMECHECK_PROGRESS) for a panel to show
   --progress-file <f>   write live progress to this file instead`;
 
-const FLAGS = new Set(['real', 'gpu', 'noRender', 'headed', 'terse', 'json', 'help', 'progress', 'lean']);
+const FLAGS = new Set(['real', 'gpu', 'noRender', 'headed', 'terse', 'json', 'help', 'progress', 'lean', 'mux']);
 
 function parse(argv: string[]): { pos: string[]; opt: Record<string, string | true> } {
   const pos: string[] = [];
@@ -55,6 +57,18 @@ async function main(): Promise<number> {
   const { pos, opt } = parse(process.argv.slice(2));
   const [command, ...files] = pos;
   if (!command || files.length === 0 || opt.help) { console.log(USAGE); return command ? 0 : 1; }
+  if (command === 'capture') {
+    if (files.length !== 1) throw new Error('capture needs one shot.json');
+    if (opt.fps === true || opt.out === true) throw new Error('--fps and --out need a value');
+    const result = await captureScenario(load(files[0] ?? '', opt) as CaptureShot, {
+      out: typeof opt.out === 'string' ? opt.out : undefined,
+      fps: typeof opt.fps === 'string' ? Number(opt.fps) : undefined,
+      mux: Boolean(opt.mux), gpu: Boolean(opt.gpu),
+    });
+    if (opt.terse) console.log(`${result.video} ${result.seconds.toFixed(3)} s ${result.frames} frames ${result.cueCount} cues`);
+    else console.log(JSON.stringify(result, null, 1));
+    return 0;
+  }
   const size = typeof opt.viewport === 'string' ? /^(\d+)x(\d+)$/.exec(opt.viewport) : null;
   if (typeof opt.viewport === 'string' && !size) throw new Error('--viewport wants WIDTHxHEIGHT, such as 640x360');
   if (typeof opt.priority === 'string' && !['low', 'normal', 'high'].includes(opt.priority)) throw new Error('--priority wants low, normal or high');

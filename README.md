@@ -72,6 +72,50 @@ await game.close();
 
 With the `phaser` engine, give it an expression for your `Phaser.Game`: `{ engine: 'phaser', gameRef: 'window.__GAME__' }`. Add `render: false` (CLI: `--no-render`) for the fastest steps. A Phaser game runs by itself in real time from the moment it is created until gamecheck takes over, so read values as a change over an advance (before and after) when you need them to repeat exactly; the `raf` engine's clock is virtual from the page's first line and has no such gap.
 
+## Capture footage with its sound
+
+```sh
+npx gamecheck capture examples/capture.json --out captures --terse
+npx gamecheck capture shot.json --out captures --fps 60 --mux
+```
+
+Writes `<id>.mp4` (H.264, CRF 16), `<id>.wav` (stereo PCM) and `<id>.cues.json`.
+Install ffmpeg on PATH or set `GAMECHECK_FFMPEG` to its executable. `--mux` adds the WAV to the MP4 as AAC;
+`--terse` prints the video path, seconds, frame count and cue count on one line.
+The self-contained `examples/capture.json` draws a moving dot and synthesizes three notes without external assets.
+
+A shot is an existing scenario with optional `capture: { "from": 1, "fps": 30, "viewport": "1280x720", "scale": 1 }`.
+`from` is the first step to capture, counted from 1; fps defaults to 30 and scale is the browser's deviceScaleFactor
+(default 1). A canvas is saved at its intrinsic pixel size; games must size it for devicePixelRatio to use scale.
+Setup steps before `from` can wait out an intro or change the save through the game's own hooks.
+All existing steps work, but `eval` and `snapshot` must not draw or advance the clock themselves; an extra draw is rejected.
+
+Capture advances the `raf` or `phaser` engine one game frame at a time with drawing on, saves every
+`round(gameFps / fps)` frames using JPEG canvas readback (or a page screenshot), and encodes them with ffmpeg.
+An init script logs Web Audio buffer starts and media plays on virtual time, copies buffers at first play, and rebuilds
+the sound in an OfflineAudioContext, with the cues timed from the first saved frame.
+
+Cues contain `{ at, src, offset, duration, rate, gain, loop }`: a fetched URL when known, otherwise a stable buffer key.
+Duration is the effective play length in video seconds, clipped by stops and the video end; a sound already playing at
+the first frame can have a negative `at`. Loops continue until stopped or the video ends. Rates that do not divide the
+engine rate use the rounded frame cadence; audio timing and speed follow that cadence to stay aligned.
+The raf engine defaults to 60 Hz; Phaser uses its target frame rate. From code, use `captureScenario(shot, { out, mux })`;
+`frameMs` can override the engine rate. MCP's `gamecheck_capture` returns paths, length and counts, never frames or images.
+The packaged `skills/gamecheck-capture/SKILL.md` covers writing a useful shot.
+
+Capture limits:
+
+- Filters, panners, reverb, live automation, oscillators and AudioWorklets are skipped or approximated in the rebuilt WAV.
+  Gain is sampled at the start along a readable connection path; parallel paths and later changes are approximated.
+  HTML media is fetched and decoded for rebuilding when possible; streams, CORS-blocked media and real-clock media seeks
+  cannot be reconstructed exactly. Fetch/XHR buffer-to-URL tracking is best effort (copied buffers can lose their URL).
+- Games in Web Workers or OffscreenCanvas are not frame-exact.
+- Software rendering is slow, often hundreds of milliseconds per frame. `--gpu` is a faster draft.
+- Games that read the wall clock for gameplay should be checked with `compare` first. The Phaser engine retains its
+  existing real-clock loading gap and page timers; use `raf` when the shot depends on those timers.
+- Canvas readback records the first canvas, without DOM overlays. If there is no readable canvas, a viewport screenshot
+  includes the page instead. An odd width or height is padded by one pixel, since H.264 in yuv420p needs even sides.
+
 ## For agents (MCP)
 
 `gamecheck-mcp` is an MCP server over stdio. Results are short on purpose, to spend few tokens. Its SDK (`@modelcontextprotocol/sdk` and `zod`) is an optional add-on, so a harness that only imports gamecheck's modules doesn't install it; the line below fetches all three. Because an agent can be steered by what it reads, the server opens only http and https pages (or inline `html`) and reads only `.json` scenario files, and it closes the browser and frees the lock as soon as its client disconnects.

@@ -12,6 +12,7 @@
   "types": "dist/src/index.d.ts",
   "files": [
     "dist/src",
+    "skills",
     "README.md",
     "LICENSE"
   ],

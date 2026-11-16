@@ -8,3 +8,4 @@ export { capBytes, planInputs, roundFloats, summarizeWatch, type FieldSummary, t
 export { Progress, progressFile, DEFAULT_PROGRESS_FILE, PROGRESS_VERSION, type ProgressOptions, type ProgressResult, type ProgressSnapshot } from './progress.js';
 export { launchTuning, lowerPriority, LEAN_ARGS, LEAN_VIEWPORT, type LaunchTuning, type Priority, type Tuning } from './lean.js';
 export { holdPriority, memoryOf, watchMemory, type MemoryExceeded } from './watchdog.js';
+export { captureScenario, type AudioCue, type CaptureOptions, type CaptureResult, type CaptureSettings, type CaptureShot } from './capture.js';

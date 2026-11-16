@@ -5,6 +5,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 import { Interactive } from './interactive.js';
 import { compareClocks, runScenario, type Scenario, type ScenarioRecord } from './scenario.js';
+import { captureScenario, type CaptureShot } from './capture.js';
 
 const scenarioInput = z.union([z.string(), z.record(z.string(), z.unknown())]).describe('A scenario object, or the path of a scenario JSON file');
 const tuning = {
@@ -53,6 +54,17 @@ function summary(record: ScenarioRecord): string {
 }
 
 const server = new McpServer({ name: 'gamecheck', version: JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).version });
+
+server.registerTool('gamecheck_capture', {
+  description: 'Captures a shot on the stepped clock with its sound. Writes MP4, WAV and cue JSON; returns only paths, seconds, frame count and cue count, never frames or images. Requires ffmpeg on PATH or GAMECHECK_FFMPEG.',
+  inputSchema: {
+    scenario: scenarioInput, out: z.string().optional(), fps: z.number().positive().optional(),
+    mux: z.boolean().optional(), gpu: z.boolean().optional(),
+  },
+}, async ({ scenario, ...options }) => {
+  const result = await captureScenario(load(scenario) as CaptureShot, options);
+  return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
+});
 
 server.registerTool('gamecheck_run', {
   description: 'Plays a game-check scenario in a headless browser, stepping the game by hand (fast and deterministic) unless real is set. Returns a short verdict and what failed.',
