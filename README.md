@@ -4,7 +4,7 @@
 
 gamecheck helps you test a browser game, film it frame by frame with its own sound, and keep clips of real play.
 
-- **Tests that run a long fight in seconds.** It drives the game's clock itself, so a 100 second boss fight takes a few seconds of wall time and gives the same result every time.
+- **Tests that run a long fight in seconds.** It drives the game's clock itself, so a check that took about 380 seconds in real time finished in 25, with the same result every time.
 - **Frame-perfect footage with the game's own sound.** `capture` plays a scenario one frame at a time and writes an MP4, a WAV and a list of sound cues.
 - **Clips of real play, saved by the game itself.** The game calls `clipper.moment('parry')` at a great moment, OBS saves the last seconds, and `clips` trims them for sharing.
 
