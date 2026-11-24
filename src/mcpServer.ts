@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { Interactive } from './interactive.js';
 import { compareClocks, runScenario, type Scenario, type ScenarioRecord } from './scenario.js';
 import { captureScenario, type CaptureShot } from './capture.js';
+import { cutClips } from './clipsCut.js';
 
 const scenarioInput = z.union([z.string(), z.record(z.string(), z.unknown())]).describe('A scenario object, or the path of a scenario JSON file');
 const tuning = {
@@ -64,6 +65,23 @@ server.registerTool('gamecheck_capture', {
 }, async ({ scenario, ...options }) => {
   const result = await captureScenario(load(scenario) as CaptureShot, options);
   return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
+});
+
+server.registerTool('gamecheck_clips_cut', {
+  description: 'Trims each video in a folder that has a clip sidecar (<video>.json from gamecheck clips collect) to its moment with ffmpeg, optionally cropped 9:16. Clips marked hold: true are listed and not cut. Returns only paths and counts. Requires ffmpeg on PATH or GAMECHECK_FFMPEG.',
+  inputSchema: {
+    folder: z.string(), out: z.string().optional(),
+    before: z.number().min(0).optional().describe('Seconds before the moment; default 8'),
+    after: z.number().min(0).optional().describe("Seconds after the moment; default the clip's post-roll"),
+    vertical: z.boolean().optional().describe('Crop 9:16, centred on meta.screenX when the game gave one'),
+    dryRun: z.boolean().optional(),
+  },
+}, async ({ folder, ...options }) => {
+  const result = await cutClips(folder, options);
+  return json({
+    dryRun: result.dryRun, cut: result.cut.map((one) => one.out), held: result.held, done: result.done, failed: result.failed,
+    counts: { cut: result.cut.length, held: result.held.length, done: result.done.length, unmatched: result.unmatched.length, failed: result.failed.length },
+  });
 });
 
 server.registerTool('gamecheck_run', {

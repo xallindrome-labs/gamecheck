@@ -1,32 +1,29 @@
 # gamecheck
 
-Run a browser game faster than real time, headless. gamecheck drives the game's clock itself instead of waiting on it, so a
-100 second boss fight takes a few seconds of wall time, and the same run gives the same result every time. What you use
-that speed for is up to you: tests, fight-length tables, soak runs, or an AI agent playing and inspecting a game.
+<!-- demo gif: docs/demo.gif -->
 
-It sits on top of [Playwright](https://playwright.dev) and was extracted from a Phaser 3 action game whose headless runs
-were slow for two reasons: CPU (software) rendering, and fights that ran in real time.
+gamecheck helps you test a browser game, film it frame by frame with its own sound, and keep clips of real play.
 
-## What it does
+- **Tests that run a long fight in seconds.** It drives the game's clock itself, so a check that took about 380 seconds in real time finished in 25, with the same result every time.
+- **Frame-perfect footage with the game's own sound.** `capture` plays a scenario one frame at a time and writes an MP4, a WAV and a list of sound cues.
+- **Clips of real play, saved by the game itself.** The game calls `clipper.moment('parry')` at a great moment, OBS saves the last seconds, and `clips` trims them for sharing.
 
-- **Runs game time faster.** Two ways to drive time, so most engines work:
-  - `raf`: a virtual clock for `requestAnimationFrame`, `setTimeout`, `setInterval`, `performance.now` and `Date.now`,
-    installed before the page loads. Works with any engine that runs on those (Phaser, PixiJS, three.js, your own loop).
-  - `phaser`: steps `Phaser.Game` directly. With `render: false` it uses Phaser's `headlessStep`, which runs every scene's
-    logic and skips drawing, the fastest mode there is.
-- **Tells you whether the fast run can be trusted.** `gamecheck compare` plays a scenario on the real clock and on the stepped
-  one and lists every verdict and observed value that differs. Use it before you rely on a stepped result.
-- **Keeps the machine light.** One headless run at a time, through a lock file (a holder that is gone is taken over).
-- **Speaks tersely.** `--terse` prints one line, so an agent reading it spends few tokens.
+Each one works on its own. They run on [Playwright](https://playwright.dev) (tests and capture) and [OBS Studio](https://obsproject.com) (clips). gamecheck was extracted from a Phaser 3 action game whose headless runs were slow for two reasons: CPU (software) rendering, and fights that ran in real time.
 
-## Quick start
+## Run: tests that finish in seconds
 
 ```sh
-npm install @xallindrome-labs/gamecheck playwright
-npx playwright install chromium
-npx gamecheck run examples/walker.json
-npx gamecheck compare examples/walker.json
+npx gamecheck run examples/walker.json        # play a scenario on the stepped clock
+npx gamecheck compare examples/walker.json    # then check it against the real clock
 ```
+
+What you get:
+
+- **Faster game time.** Two ways to drive it, so most engines work:
+  - `raf`: a virtual clock for `requestAnimationFrame`, `setTimeout`, `setInterval`, `performance.now` and `Date.now`, installed before the page loads. It works with any engine that runs on those (Phaser, PixiJS, three.js, your own loop).
+  - `phaser`: steps `Phaser.Game` directly. With `render: false` it uses Phaser's `headlessStep`, which runs every scene's logic and skips drawing. That is the fastest mode there is.
+- **A way to tell whether the fast run can be trusted.** `gamecheck compare` plays a scenario on the real clock and on the stepped one and lists every verdict and observed value that differs. Use it before you rely on a stepped result.
+- **A light footprint.** One headless run at a time, through a lock file (a holder that is gone is taken over). `--terse` prints one line, so an agent reading it spends few tokens.
 
 A scenario is JSON: steps, then expectations on what you recorded.
 
@@ -47,13 +44,10 @@ A scenario is JSON: steps, then expectations on what you recorded.
 }
 ```
 
-Steps: `advance`, `key` (held for game time), `waitFor` (an expression, polled in game time), `snapshot`, `eval`, and two
-that turn a loop you would otherwise hand-write into a step:
+Steps: `advance`, `key` (held for game time), `waitFor` (an expression, polled in game time), `snapshot`, `eval`, and two that turn a loop you would otherwise hand-write into a step:
 
-- `measure`: game time until an expression is true, with a cap and stall detection (a progress expression that stops
-  changing). It is a fight-length table in one step: `{ "do": "measure", "until": "boss.dead", "as": "fight", "capMs": 900000, "progress": "boss.hp", "stallMs": 60000 }`.
-- `soak`: play on for N game milliseconds, checking an invariant every poll and pressing a seeded random key now and then.
-  The first violation comes back with its game time and seed, so it replays exactly: a softlock or out-of-bounds hunt.
+- `measure`: game time until an expression is true, with a cap and stall detection (a progress expression that stops changing). It is a fight-length table in one step: `{ "do": "measure", "until": "boss.dead", "as": "fight", "capMs": 900000, "progress": "boss.hp", "stallMs": 60000 }`.
+- `soak`: play on for N game milliseconds, checking an invariant every poll and pressing a seeded random key now and then. The first violation comes back with its game time and seed, so it replays exactly: a softlock or out-of-bounds hunt.
 
 Expectations: `equals`, `oneOf`, `min`, `max` at a dotted path in a snapshot.
 
@@ -70,64 +64,122 @@ console.log(await game.evaluate('window.state'));
 await game.close();
 ```
 
-With the `phaser` engine, give it an expression for your `Phaser.Game`: `{ engine: 'phaser', gameRef: 'window.__GAME__' }`. Add `render: false` (CLI: `--no-render`) for the fastest steps. A Phaser game runs by itself in real time from the moment it is created until gamecheck takes over, so read values as a change over an advance (before and after) when you need them to repeat exactly; the `raf` engine's clock is virtual from the page's first line and has no such gap.
+With the `phaser` engine, give it an expression for your `Phaser.Game`: `{ engine: 'phaser', gameRef: 'window.__GAME__' }`. Add `render: false` (CLI: `--no-render`) for the fastest steps. A Phaser game runs by itself in real time from the moment it is created until gamecheck takes over, so read values as a change over an advance (before and after) when you need them to repeat exactly. The `raf` engine's clock is virtual from the page's first line and has no such gap.
 
-## Capture footage with its sound
+## Capture: footage with the game's own sound
 
 ```sh
 npx gamecheck capture examples/capture.json --out captures --terse
 npx gamecheck capture shot.json --out captures --fps 60 --mux
 ```
 
-Writes `<id>.mp4` (H.264, CRF 16), `<id>.wav` (stereo PCM) and `<id>.cues.json`.
-Install ffmpeg on PATH or set `GAMECHECK_FFMPEG` to its executable. `--mux` adds the WAV to the MP4 as AAC;
-`--terse` prints the video path, seconds, frame count and cue count on one line.
-The self-contained `examples/capture.json` draws a moving dot and synthesizes three notes without external assets.
+This writes `<id>.mp4` (H.264, CRF 16), `<id>.wav` (stereo PCM) and `<id>.cues.json`. Install ffmpeg on PATH or set `GAMECHECK_FFMPEG` to its executable. `--mux` adds the WAV to the MP4 as AAC. `--terse` prints the video path, seconds, frame count and cue count on one line. The self-contained `examples/capture.json` draws a moving dot and synthesizes three notes without external assets.
 
-A shot is an existing scenario with optional `capture: { "from": 1, "fps": 30, "viewport": "1280x720", "scale": 1 }`.
-`from` is the first step to capture, counted from 1; fps defaults to 30 and scale is the browser's deviceScaleFactor
-(default 1). A canvas is saved at its intrinsic pixel size; games must size it for devicePixelRatio to use scale.
-Setup steps before `from` can wait out an intro or change the save through the game's own hooks.
-All existing steps work, but `eval` and `snapshot` must not draw or advance the clock themselves; an extra draw is rejected.
+A shot is an existing scenario with optional `capture: { "from": 1, "fps": 30, "viewport": "1280x720", "scale": 1 }`. `from` is the first step to capture, counted from 1. `fps` defaults to 30 and `scale` is the browser's deviceScaleFactor (default 1). A canvas is saved at its intrinsic pixel size, so a game must size it for devicePixelRatio to use `scale`. Setup steps before `from` can wait out an intro or change the save through the game's own hooks. All existing steps work, but `eval` and `snapshot` must not draw or advance the clock themselves; an extra draw is rejected.
 
-Capture advances the `raf` or `phaser` engine one game frame at a time with drawing on, saves every
-`round(gameFps / fps)` frames using JPEG canvas readback (or a page screenshot), and encodes them with ffmpeg.
-An init script logs Web Audio buffer starts and media plays on virtual time, copies buffers at first play, and rebuilds
-the sound in an OfflineAudioContext, with the cues timed from the first saved frame.
+How it works: capture advances the `raf` or `phaser` engine one game frame at a time with drawing on, saves every `round(gameFps / fps)` frames using JPEG canvas readback (or a page screenshot), and encodes them with ffmpeg. An init script logs Web Audio buffer starts and media plays on virtual time, copies buffers at first play, and rebuilds the sound in an OfflineAudioContext, with the cues timed from the first saved frame.
 
-Cues contain `{ at, src, offset, duration, rate, gain, loop }`: a fetched URL when known, otherwise a stable buffer key.
-Duration is the effective play length in video seconds, clipped by stops and the video end; a sound already playing at
-the first frame can have a negative `at`. Loops continue until stopped or the video ends. Rates that do not divide the
-engine rate use the rounded frame cadence; audio timing and speed follow that cadence to stay aligned.
-The raf engine defaults to 60 Hz; Phaser uses its target frame rate. From code, use `captureScenario(shot, { out, mux })`;
-`frameMs` can override the engine rate. MCP's `gamecheck_capture` returns paths, length and counts, never frames or images.
-The packaged `skills/gamecheck-capture/SKILL.md` covers writing a useful shot.
+Cues contain `{ at, src, offset, duration, rate, gain, loop }`: a fetched URL when known, otherwise a stable buffer key. Duration is the effective play length in video seconds, clipped by stops and the video end. A sound already playing at the first frame can have a negative `at`. Loops continue until stopped or the video ends. Rates that do not divide the engine rate use the rounded frame cadence, and audio timing and speed follow that cadence to stay aligned. The raf engine defaults to 60 Hz; Phaser uses its target frame rate.
+
+From code, use `captureScenario(shot, { out, mux })`; `frameMs` can override the engine rate. MCP's `gamecheck_capture` returns paths, length and counts, never frames or images. The packaged `skills/gamecheck-capture/SKILL.md` covers writing a useful shot.
 
 Capture limits:
 
-- Filters, panners, reverb, live automation, oscillators and AudioWorklets are skipped or approximated in the rebuilt WAV.
-  Gain is sampled at the start along a readable connection path; parallel paths and later changes are approximated.
-  HTML media is fetched and decoded for rebuilding when possible; streams, CORS-blocked media and real-clock media seeks
-  cannot be reconstructed exactly. Fetch/XHR buffer-to-URL tracking is best effort (copied buffers can lose their URL).
+- Filters, panners, reverb, live automation, oscillators and AudioWorklets are skipped or approximated in the rebuilt WAV. Gain is sampled at the start along a readable connection path; parallel paths and later changes are approximated. HTML media is fetched and decoded for rebuilding when possible. Streams, CORS-blocked media and real-clock media seeks cannot be reconstructed exactly. Fetch/XHR buffer-to-URL tracking is best effort (copied buffers can lose their URL).
 - Games in Web Workers or OffscreenCanvas are not frame-exact.
 - Software rendering is slow, often hundreds of milliseconds per frame. `--gpu` is a faster draft.
-- Games that read the wall clock for gameplay should be checked with `compare` first. The Phaser engine retains its
-  existing real-clock loading gap and page timers; use `raf` when the shot depends on those timers.
-- Canvas readback records the first canvas, without DOM overlays. If there is no readable canvas, a viewport screenshot
-  includes the page instead. An odd width or height is padded by one pixel, since H.264 in yuv420p needs even sides.
+- Games that read the wall clock for gameplay should be checked with `compare` first. The Phaser engine retains its existing real-clock loading gap and page timers; use `raf` when the shot depends on those timers.
+- Canvas readback records the first canvas, without DOM overlays. If there is no readable canvas, a viewport screenshot includes the page instead. An odd width or height is padded by one pixel, since H.264 in yuv420p needs even sides.
+
+## Clips: real play, saved by the game
+
+Players and devs keep OBS Studio's replay buffer running. The game says when something great happened, and OBS saves the last seconds. It works for any browser game, and for Electron.
+
+```js
+import { createClipper } from '@xallindrome-labs/gamecheck/clips';
+const clipper = createClipper({ password: 'your-obs-password' });
+clipper.moment('parry', { screenX: 0.4 });   // in the game, at the great moment
+// in a terminal, while playing:  npx gamecheck clips collect --password your-obs-password
+// afterwards:                    npx gamecheck clips cut ~/Videos --vertical
+```
+
+The pieces:
+
+1. **The game** creates one clipper and calls `moment(trigger, meta)`. After `postRollMs` (default 3000) it tells OBS to save the replay buffer, and when OBS reports the file it broadcasts a record of the moment to every OBS WebSocket client.
+2. **`gamecheck clips collect`** listens for that record and writes `<video>.json` next to the saved video.
+3. **`gamecheck clips cut`** trims each video that has a sidecar to its moment with ffmpeg, and can crop it 9:16 for phones.
+
+`@xallindrome-labs/gamecheck/clips` is a separate entry. It imports nothing from Node or Playwright, so a bundler can ship it inside a game. The main entry does not export it.
+
+### OBS setup
+
+1. Settings, Output, Replay Buffer: turn it on, set the maximum time to 30 to 60 seconds, and use a hardware encoder (NVENC, AMF or Quick Sync) so recording stays cheap.
+2. Tools, WebSocket Server Settings: enable the server on port 4455 and set a password.
+3. Capture only the game: a Game Capture or Window Capture of the game window, and its audio only (an Application Audio Capture, not the whole desktop).
+4. Press Start Replay Buffer before you play. Run `gamecheck clips collect` while you play, because a clip saved while it is not running has no record.
+
+### In the game
+
+```ts
+const clipper = createClipper({ url: 'ws://localhost:4455', password, postRollMs: 3000, cooldownMs: 10_000, reconnectMs: 30_000, log: console.log });
+clipper.moment('parry', { screenX: 0.4, boss: 'moth' });
+clipper.records();   // every record so far, saved or waiting
+clipper.close();
+```
+
+All options are optional. `moment` never throws into the game. It returns `false` when the moment was ignored: OBS is not connected, or the same trigger is still cooling down. With no OBS the clipper logs once, ignores moments, and tries again every `reconnectMs` without further noise.
+
+- `cooldownMs` is the least time between two accepted moments of the same trigger (default 10 000). It can be a function of the trigger.
+- Moments of other triggers, or of the same trigger after its cooldown, that land inside one post-roll share one clip and are listed under `also` in its record.
+- `meta` is yours. Two keys mean something to `cut`: `screenX` (0 to 1, where across the screen it happened) steers the vertical crop, and `hold: true` marks a clip that must not be cut or shared yet, such as a spoiler.
+- The record is `{ trigger, meta, wallTime, postRollMs, also, outputPath }`; see `examples/clips/sidecar.example.json`. `examples/clips/index.html` is a page that marks a moment on a key press. Build first (`npm run build`) and serve the repo folder over HTTP.
+
+### Collect and cut
+
+```sh
+gamecheck clips collect [--url ws://localhost:4455] [--password X]
+gamecheck clips cut <folder> [--out DIR] [--before 8] [--after SECONDS] [--vertical] [--dry-run]
+```
+
+`collect` needs Node 22 or newer, which has a global `WebSocket`, and says so otherwise. The password can also come from `OBS_PASSWORD`. It reconnects if OBS restarts.
+
+`cut` looks at the videos directly in `<folder>` (mp4, mkv, mov, flv, webm) that have a `<video>.json` beside them:
+
+- The moment is `postRollMs` before the end of the saved replay. The cut starts `--before` seconds earlier (default 8) and ends `--after` seconds later (default: the post-roll, so it runs to the end), always inside the video.
+- The result is re-encoded to H.264 and AAC, with every audio track kept, in `<folder>/cuts` (or `--out`) as `<video>.mp4`.
+- `--vertical` crops a 9:16 box centred on `meta.screenX`, or on the middle without it, and writes `<video>-vertical.mp4`. It crops and does not scale.
+- A clip whose `meta`, or the `meta` of any moment in `also`, has `hold: true` is listed as held and not cut.
+- Done clips are recorded in `<folder>/cut.json`, so a second run skips them unless the options changed. `--dry-run` shows the plan and writes nothing.
+- ffmpeg is found the way `capture` finds it: on PATH, or `GAMECHECK_FFMPEG`.
+- From code: `cutClips(folder, options)`, `cutWindow` and `verticalCrop` are exported from the main entry. The MCP tool `gamecheck_clips_cut` runs the same cut and returns only paths and counts.
+
+Clip limits:
+
+- Only the game knows its great moments, so a game must call `moment`. gamecheck does not detect them.
+- A moment is ignored while OBS is not connected, and nothing is caught up later.
+- OBS saves when it is told, so the moment's place in the clip is the post-roll before the end, give or take a fraction of a second.
+- The `hold` flag is honoured by `cut`. `collect` still writes the sidecar, and the video itself is still in OBS's folder.
+
+## Install
+
+```sh
+npm install @xallindrome-labs/gamecheck playwright
+npx playwright install chromium
+```
+
+Playwright is only needed for `run`, `compare` and `capture`; clips need OBS and, for `cut`, ffmpeg. Node 20 or newer; `clips collect` needs 22.
 
 ## For agents (MCP)
 
-`gamecheck-mcp` is an MCP server over stdio. Results are short on purpose, to spend few tokens. Its SDK (`@modelcontextprotocol/sdk` and `zod`) is an optional add-on, so a harness that only imports gamecheck's modules doesn't install it; the line below fetches all three. Because an agent can be steered by what it reads, the server opens only http and https pages (or inline `html`) and reads only `.json` scenario files, and it closes the browser and frees the lock as soon as its client disconnects.
+`gamecheck-mcp` is an MCP server over stdio. Results are short on purpose, to spend few tokens. Its SDK (`@modelcontextprotocol/sdk` and `zod`) is an optional add-on, so a harness that only imports gamecheck's modules does not install it; the line below fetches all three. Because an agent can be steered by what it reads, the server opens only http and https pages (or inline `html`) and reads only `.json` scenario files, and it closes the browser and frees the lock as soon as its client disconnects.
 
 ```json
 { "mcpServers": { "gamecheck": { "command": "npx", "args": ["-y", "-p", "@xallindrome-labs/gamecheck", "-p", "@modelcontextprotocol/sdk", "-p", "zod", "gamecheck-mcp"] } } }
 ```
 
-Whole scenarios: `gamecheck_run` and `gamecheck_compare`.
+Whole scenarios: `gamecheck_run` and `gamecheck_compare`. Footage: `gamecheck_capture`. Clips: `gamecheck_clips_cut`.
 
-Step by step, for an agent that wants to look, act and look again. Time stands still between calls, so nothing happens
-that the agent did not ask for:
+Step by step, for an agent that wants to look, act and look again. Time stands still between calls, so nothing happens that the agent did not ask for:
 
 | Tool | What it does |
 | --- | --- |
@@ -138,8 +190,7 @@ that the agent did not ask for:
 | `gamecheck_screenshot` | A PNG, for how something looks. Costs far more than a state read. |
 | `gamecheck_close` | Lets the lock go. |
 
-A game can help the agent read it cheaply by offering a curated digest, which `gamecheck_state` uses when no expressions
-are given:
+A game can help the agent read it cheaply by offering a curated digest, which `gamecheck_state` uses when no expressions are given:
 
 ```js
 window.__gamecheck = { state: () => ({ phase: 2, boss: { hp: 120, at: [40, 80] }, goals: ['reach the gate'] }) };
@@ -169,35 +220,25 @@ Measured with `node bench/cost.mjs` (30 game seconds of a Phaser WebGL page with
 | `--lean --draw-every 4` | 3.7 s | 57 s | 438 MB |
 | `--lean --no-render` | 0.1 s | 0.5 s | 304 MB |
 
-Drawing is the cost: skipping it is about 150 times faster and uses about 500 times less CPU; drawing one frame in four is about 4.7 times faster. `--lean` on its own changed nothing in this test, because the page fixes its own canvas size, so shrinking the window does not change what is drawn. The smaller window only saves work for a game whose canvas follows the window. The lighter Chrome flags did not show up in a 30-second run either; they stop background work rather than frame work.
+Drawing is the cost: skipping it is about 150 times faster and uses about 500 times less CPU, and drawing one frame in four is about 4.7 times faster. `--lean` on its own changed nothing in this test, because the page fixes its own canvas size, so shrinking the window does not change what is drawn. The smaller window only saves work for a game whose canvas follows the window. The lighter Chrome flags did not show up in a 30-second run either; they stop background work rather than frame work.
 
 ## Watching a run
 
-`gamecheck run a.json b.json c.json --progress` plays the scenarios one after another and rewrites a small JSON file as
-it goes (`.gamecheck/progress.json`, or `--progress-file <path>`, or the `GAMECHECK_PROGRESS` environment variable).
-The MCP server writes it by default, for runs, comparisons and interactive sessions, so an agent's work shows up in the
-panel; set `GAMECHECK_PROGRESS=off` to stop that. The file holds the run's counts, the scenario in flight, its
-current step and game time, the last results, and every failure. It is replaced whole and atomically, so anything can
-poll it: a terminal, a CI step, an editor panel. The CLI writes it only when asked for, and a failed write never stops a run.
+`gamecheck run a.json b.json c.json --progress` plays the scenarios one after another and rewrites a small JSON file as it goes (`.gamecheck/progress.json`, or `--progress-file <path>`, or the `GAMECHECK_PROGRESS` environment variable). The MCP server writes it by default, for runs, comparisons and interactive sessions, so an agent's work shows up in the panel; set `GAMECHECK_PROGRESS=off` to stop that. The file holds the run's counts, the scenario in flight, its current step and game time, the last results, and every failure. It is replaced whole and atomically, so anything can poll it: a terminal, a CI step, an editor panel. The CLI writes it only when asked for, and a failed write never stops a run.
 
 From code, `new Progress({ file, total })` is the writer, and it is a `ScenarioObserver` you can hand to `runScenario`.
 
-There is a Claude Code panel that draws this file live: `mods/claude-code-panel` (a bar, the scenario and step now,
-passed and failed counts, recent results, failures, and a "stalled" warning when the file stops changing). Install it at
-the prompt of a terminal Claude Code session:
+There is a Claude Code panel that draws this file live: `mods/claude-code-panel` (a bar, the scenario and step now, passed and failed counts, recent results, failures, and a "stalled" warning when the file stops changing). Install it at the prompt of a terminal Claude Code session:
 
 ```
 /plugin install gamecheck-progress --marketplace xallindrome-labs/gamecheck
 ```
 
-or from a shell: `claude plugin install gamecheck-progress --marketplace xallindrome-labs/gamecheck`. Then run a check with
-`--progress` from the folder Claude Code is open in (or point the mod's "Progress file" setting at the file), and type
-`/gamecheck` if the pane does not open by itself.
+or from a shell: `claude plugin install gamecheck-progress --marketplace xallindrome-labs/gamecheck`. Then run a check with `--progress` from the folder Claude Code is open in (or point the mod's "Progress file" setting at the file), and type `/gamecheck` if the pane does not open by itself.
 
 ## Using the pieces in your own harness
 
-If you already have a Playwright harness, you do not need the rest of gamecheck to get the cheaper-run and panel pieces.
-`integrations/` has three dependency-free files to copy (a test keeps them identical to the sources):
+If you already have a Playwright harness, you do not need the rest of gamecheck to get the cheaper-run and panel pieces. `integrations/` has three dependency-free files to copy (a test keeps them identical to the sources):
 
 - `progress.mjs`: the progress-file writer the Claude Code panel reads (`new Progress({ file, total })`, then `begin`, `step`, `tick`, `end`, `finish`).
 - `lean.mjs`: the lean Chrome flags, the small window size, and `launchTuning` to combine them with a priority and memory ceiling.
@@ -205,55 +246,30 @@ If you already have a Playwright harness, you do not need the rest of gamecheck 
 
 ## Honest limits
 
-- It drives game time, not the browser's. Anything that waits on real I/O (network, image decode) still takes real time;
-  `until` yields to it between polls.
-- With the `phaser` engine, timers the page registered before the clock started stay on real time. The `raf` engine has no
-  such gap because it starts with the page.
-- Playwright's own `page.clock` did not drive a Phaser game in our tests (frames did not advance with it), which is why
-  this exists.
-- `render: false` skips drawing, so anything that reads values the renderer computes goes stale: Phaser's camera view and
-  world-point conversion, for one. Run `compare` on a scenario before relying on it, and use `render: true` where aiming or
-  hit tests depend on the camera.
-- Rendering is not time-warped: `--gpu` makes frames cheap, software rendering stays the reference for pixels. Take
-  screenshots on the real clock.
-- A game that reads the wall clock for gameplay (a `setTimeout`-based pause, say) is better checked on the real clock:
-  run `compare` and look.
+- It drives game time, not the browser's. Anything that waits on real I/O (network, image decode) still takes real time; `until` yields to it between polls.
+- With the `phaser` engine, timers the page registered before the clock started stay on real time. The `raf` engine has no such gap because it starts with the page.
+- Playwright's own `page.clock` did not drive a Phaser game in our tests (frames did not advance with it), which is why this exists.
+- `render: false` skips drawing, so anything that reads values the renderer computes goes stale: Phaser's camera view and world-point conversion, for one. Run `compare` on a scenario before relying on it, and use `render: true` where aiming or hit tests depend on the camera.
+- Rendering is not time-warped: `--gpu` makes frames cheap, and software rendering stays the reference for pixels. Take screenshots on the real clock.
+- A game that reads the wall clock for gameplay (a `setTimeout`-based pause, say) is better checked on the real clock: run `compare` and look.
 - `--gpu` picks Direct3D 11 on Windows and Metal on macOS. Other platforms have not been tried.
+- Capture and clips have their own limits, listed in their sections.
 
 ## Numbers
 
-From the game it came out of, one run each, so read them as rough: a boss fight of 262 game seconds took 24.7 s of wall
-time including 13 s of setup (about 380 s in real time with software rendering), and scenarios ran 2 to 4 times
-faster, more on long ones. Short scenarios gain little, because page and scene loading stay in real time.
+From the game it came out of, one run each, so read them as rough: a boss fight of 262 game seconds took 24.7 s of wall time including 13 s of setup (about 380 s in real time with software rendering), and scenarios ran 2 to 4 times faster, more on long ones. Short scenarios gain little, because page and scene loading stay in real time.
 
 ## Related work
 
-gamecheck is not the first tool to run a browser game on a controlled clock, and it is young company. In a survey in
-November 2026 we found these, from their READMEs and docs (not their source), several of them weeks old:
+gamecheck is not the first tool to run a browser game on a controlled clock, and it is young company. In a survey in November 2026 we found these, from their READMEs and docs (not their source), several of them weeks old:
 
-- [playproof](https://github.com/EmirhanOzl/playproof) (MIT): the closest. It injects a virtual clock before page scripts
-  (frames, timers, `performance.now`, `Date`, CSS animations) with a seeded `Math.random`, says it gives identical frames
-  across Canvas 2D, Phaser 3, PixiJS 8, three.js, Godot web and Unity WebGL, runs as an MCP server, and has a seeded `monkey`
-  random player that reports hangs and soft-locks with a reproduce command. It states that the clock is not frame-exact for
-  games that simulate in a Web Worker.
-- [paprika3d](https://github.com/paprika3d/paprika3d) (Apache-2.0): an MCP server for three.js and WebGL pages with an injected,
-  paused virtual clock, an `interact` tool with `until` and `expect`, and saved plays that can be re-run.
-- [debuff](https://github.com/debuffjp/debuff) (MIT): a game framework with its own fixed-step clock, JSON scenarios,
-  a seeded `fuzz` that emits a replay, and an MCP server. Only for games built on it.
-- [clik-engine](https://pvydro.github.io/clik-engine/) (MIT): its test harness stops a Phaser game's loop and calls
-  `headlessStep` at a fixed timestep, with seeded scripted, random-fuzz and policy strategies.
-- Clock building blocks and neighbours: [`@sinonjs/fake-timers`](https://github.com/sinonjs/fake-timers) and Playwright's
-  `page.clock`; [timeweb](https://github.com/tungs/timeweb) and [overcrank](https://github.com/upspawn/overcrank), which do it to
-  record video; [chaosbringer](https://www.npmjs.com/package/chaosbringer), seeded random actions with invariants for web
-  pages; OpenAI's `develop-web-game` skill (games expose `window.advanceTime(ms)`);
-  [godot-mcp](https://github.com/satelliteoflove/godot-mcp), freeze and step tools for Godot. Godot, Unity and Bevy have
-  native fixed-step modes too.
+- [playproof](https://github.com/EmirhanOzl/playproof) (MIT): the closest. It injects a virtual clock before page scripts (frames, timers, `performance.now`, `Date`, CSS animations) with a seeded `Math.random`, says it gives identical frames across Canvas 2D, Phaser 3, PixiJS 8, three.js, Godot web and Unity WebGL, runs as an MCP server, and has a seeded `monkey` random player that reports hangs and soft-locks with a reproduce command. It states that the clock is not frame-exact for games that simulate in a Web Worker.
+- [paprika3d](https://github.com/paprika3d/paprika3d) (Apache-2.0): an MCP server for three.js and WebGL pages with an injected, paused virtual clock, an `interact` tool with `until` and `expect`, and saved plays that can be re-run.
+- [debuff](https://github.com/debuffjp/debuff) (MIT): a game framework with its own fixed-step clock, JSON scenarios, a seeded `fuzz` that emits a replay, and an MCP server. Only for games built on it.
+- [clik-engine](https://pvydro.github.io/clik-engine/) (MIT): its test harness stops a Phaser game's loop and calls `headlessStep` at a fixed timestep, with seeded scripted, random-fuzz and policy strategies.
+- Clock building blocks and neighbours: [`@sinonjs/fake-timers`](https://github.com/sinonjs/fake-timers) and Playwright's `page.clock`; [timeweb](https://github.com/tungs/timeweb) and [overcrank](https://github.com/upspawn/overcrank), which do it to record video; [chaosbringer](https://www.npmjs.com/package/chaosbringer), seeded random actions with invariants for web pages; OpenAI's `develop-web-game` skill (games expose `window.advanceTime(ms)`); [godot-mcp](https://github.com/satelliteoflove/godot-mcp), freeze and step tools for Godot. Godot, Unity and Bevy have native fixed-step modes too.
 
-What we did not find in any of them, which is what gamecheck adds: a `compare` that plays a scenario on the real clock and on
-the stepped one and diffs the results; a Phaser `headlessStep` adapter on top of an engine-agnostic clock; a soak run that
-checks an invariant you write and replays from its seed; a `measure` step with a cap and a stall guard; and a lock shared
-with other tools that run headless browsers. The survey was quick and search ranking is poor, so treat "did not find" as
-exactly that. Try playproof too, and use whichever fits.
+What we did not find in any of them, which is what gamecheck adds: a `compare` that plays a scenario on the real clock and on the stepped one and diffs the results; a Phaser `headlessStep` adapter on top of an engine-agnostic clock; a soak run that checks an invariant you write and replays from its seed; a `measure` step with a cap and a stall guard; and a lock shared with other tools that run headless browsers. The survey was quick and search ranking is poor, so treat "did not find" as exactly that. Try playproof too, and use whichever fits. The survey covered clock and test tools only; the clips feature rests on OBS's own replay buffer and WebSocket server.
 
 ## License
 

@@ -1,0 +1,16 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>gamecheck clips</title>
+<p>Start OBS with the replay buffer on and its WebSocket server enabled, then press Space. Open the console for the clipper's log.</p>
+<script type="module">
+  // In a game, import from '@xallindrome-labs/gamecheck/clips' instead.
+  import { createClipper } from '../../dist/src/clips.js';
+
+  const clipper = createClipper({ url: 'ws://localhost:4455', password: 'change-me', postRollMs: 3000, cooldownMs: 10000 });
+
+  addEventListener('keydown', (event) => {
+    if (event.code !== 'Space') return;
+    const saved = clipper.moment('parry', { screenX: 0.5, boss: 'demo' });
+    console.log(saved ? 'moment marked' : 'ignored: cooling down, or OBS is not connected');
+  });
+</script>

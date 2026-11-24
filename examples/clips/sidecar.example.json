@@ -1,0 +1,8 @@
+{
+  "trigger": "parry",
+  "meta": { "screenX": 0.25, "boss": "demo" },
+  "wallTime": 1790000000000,
+  "postRollMs": 3000,
+  "also": [],
+  "outputPath": "C:/Videos/Replay 2026-11-23 21-30-05.mkv"
+}

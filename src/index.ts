@@ -9,3 +9,5 @@ export { Progress, progressFile, DEFAULT_PROGRESS_FILE, PROGRESS_VERSION, type P
 export { launchTuning, lowerPriority, LEAN_ARGS, LEAN_VIEWPORT, type LaunchTuning, type Priority, type Tuning } from './lean.js';
 export { holdPriority, memoryOf, watchMemory, type MemoryExceeded } from './watchdog.js';
 export { captureScenario, type AudioCue, type CaptureOptions, type CaptureResult, type CaptureSettings, type CaptureShot } from './capture.js';
+export { collectClips, sidecarPath, type CollectOptions } from './clipsCollect.js';
+export { cutClips, cutWindow, verticalCrop, type CropBox, type CutItem, type CutOptions, type CutResult, type CutWindow } from './clipsCut.js';
