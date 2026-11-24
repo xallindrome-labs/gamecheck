@@ -10,6 +10,17 @@
   },
   "main": "dist/src/index.js",
   "types": "dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "default": "./dist/src/index.js"
+    },
+    "./clips": {
+      "types": "./dist/src/clips.d.ts",
+      "default": "./dist/src/clips.js"
+    },
+    "./package.json": "./package.json"
+  },
   "files": [
     "dist/src",
     "skills",
@@ -58,6 +69,8 @@
     "playwright",
     "phaser",
     "deterministic",
+    "obs",
+    "clips",
     "virtual-time"
   ],
   "repository": {

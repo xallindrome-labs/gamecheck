@@ -9,6 +9,8 @@ import { captureScenario, type CaptureShot } from './capture.js';
 const USAGE = `gamecheck run <scenario.json...> [options]    play one or more scenarios, stepped by default
 gamecheck compare <scenario.json> [options]   play it on the real clock and the stepped one, and diff the results
 gamecheck capture <shot.json> [--out DIR] [--fps N] [--mux] [--gpu] [--terse]
+gamecheck clips collect [--url ws://localhost:4455] [--password X]
+gamecheck clips cut <folder> [--out DIR] [--before 8] [--after SECONDS] [--vertical] [--dry-run]
 
   --url <page>          the page to test (overrides the scenario's)
   --engine raf|phaser   how to drive time (raf: any engine; phaser: steps Phaser.Game directly)
@@ -28,7 +30,7 @@ gamecheck capture <shot.json> [--out DIR] [--fps N] [--mux] [--gpu] [--terse]
   --progress            write live progress to .gamecheck/progress.json (or $GAMECHECK_PROGRESS) for a panel to show
   --progress-file <f>   write live progress to this file instead`;
 
-const FLAGS = new Set(['real', 'gpu', 'noRender', 'headed', 'terse', 'json', 'help', 'progress', 'lean', 'mux']);
+const FLAGS = new Set(['real', 'gpu', 'noRender', 'headed', 'terse', 'json', 'help', 'progress', 'lean', 'mux', 'vertical', 'dryRun']);
 
 function parse(argv: string[]): { pos: string[]; opt: Record<string, string | true> } {
   const pos: string[] = [];
@@ -57,6 +59,36 @@ async function main(): Promise<number> {
   const { pos, opt } = parse(process.argv.slice(2));
   const [command, ...files] = pos;
   if (!command || files.length === 0 || opt.help) { console.log(USAGE); return command ? 0 : 1; }
+  if (command === 'clips') {
+    const [action, folder] = files;
+    const text = (name: string): string | undefined => {
+      const value = opt[name];
+      if (value === true) throw new Error(`--${name} needs a value`);
+      return value;
+    };
+    const seconds = (name: string): number | undefined => {
+      const value = text(name);
+      if (value === undefined) return undefined;
+      if (!Number.isFinite(Number(value)) || Number(value) < 0) throw new Error(`--${name} wants a number of seconds`);
+      return Number(value);
+    };
+    if (action === 'collect') {
+      const { collectClips } = await import('./clipsCollect.js');
+      collectClips({ url: text('url'), password: text('password') });
+      return new Promise<number>(() => undefined);
+    }
+    if (action === 'cut' && folder) {
+      const { cutClips } = await import('./clipsCut.js');
+      const result = await cutClips(folder, { out: text('out'), before: seconds('before'), after: seconds('after'), vertical: Boolean(opt.vertical), dryRun: Boolean(opt.dryRun) });
+      for (const item of result.cut) console.log(`${result.dryRun ? 'would cut' : 'cut'} ${item.video} -> ${item.out} (${item.start.toFixed(1)} s, ${item.length.toFixed(1)} s${item.crop ? `, crop ${item.crop.w}x${item.crop.h} at ${item.crop.x}` : ''})`);
+      for (const name of result.held) console.log(`held ${name} (hold: true)`);
+      for (const one of result.failed) console.log(`FAIL ${one.video}: ${one.error}`);
+      console.log(`${result.cut.length} cut, ${result.held.length} held, ${result.done.length} already done, ${result.unmatched.length} without a sidecar, ${result.failed.length} failed`);
+      return result.failed.length ? 1 : 0;
+    }
+    console.log(USAGE);
+    return 1;
+  }
   if (command === 'capture') {
     if (files.length !== 1) throw new Error('capture needs one shot.json');
     if (opt.fps === true || opt.out === true) throw new Error('--fps and --out need a value');
